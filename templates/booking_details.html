@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking Details - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            {% if session.role == 'customer' %}
+            <a href="{{ url_for('dashboard') }}">Home</a>
+            <a href="{{ url_for('my_bookings') }}">My Bookings</a>
+            {% elif session.role == 'worker' %}
+            <a href="{{ url_for('worker_dashboard') }}">Dashboard</a>
+            {% elif session.role == 'admin' %}
+            <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="login-box" style="max-width: 600px; text-align: left;">
+            <h2>Booking Details #{{ booking.booking_id }}</h2>
+            
+            <div style="line-height: 1.8;">
+                <p><strong>Service:</strong> {{ booking.service_name }}</p>
+                <p><strong>Total Amount:</strong> ₹{{ "%.2f"|format(booking.amount) }}</p>
+                <p><strong>Status:</strong> <span style="font-weight: bold; color: {% if booking.booking_status == 'completed' %}green{% elif booking.booking_status == 'cancelled' %}red{% else %}orange{% endif %};">{{ booking.booking_status|capitalize }}</span></p>
+                <p><strong>Date:</strong> {{ booking.booking_date }} at {{ booking.booking_time }}</p>
+                
+                <hr style="margin: 15px 0;">
+
+                <p><strong>Customer:</strong> {{ booking.cust_name }}</p>
+                <p><strong>Customer Phone:</strong> {{ booking.cust_phone }}</p>
+                <p><strong>Service Address:</strong> {{ booking.cust_address }}</p>
+
+                <hr style="margin: 15px 0;">
+
+                <p><strong>Assigned Worker:</strong> {{ booking.worker_name if booking.worker_name else 'Not Assigned' }}</p>
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="javascript:history.back()" class="btn btn-outline">Go Back</a>
+                {% if session.role == 'customer' %}
+                    <a href="{{ url_for('dashboard') }}" class="btn">Book Another Service</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

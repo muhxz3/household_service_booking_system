@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Service - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h2>Rate Your Service</h2>
+            <p>How was your experience?</p>
+
+            <form action="/feedback/{{ booking_id }}" method="POST">
+                <div class="input-group">
+                    <label for="rating">Rating (1-5 Stars)</label>
+                    <select name="rating" id="rating" required>
+                        <option value="5">⭐⭐⭐⭐⭐ (Excellent)</option>
+                        <option value="4">⭐⭐⭐⭐ (Good)</option>
+                        <option value="3">⭐⭐⭐ (Average)</option>
+                        <option value="2">⭐⭐ (Poor)</option>
+                        <option value="1">⭐ (Terrible)</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label for="comments">Comments</label>
+                    <textarea name="comments" id="comments" rows="4" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;" placeholder="Tell us more..."></textarea>
+                </div>
+
+                <button type="submit" class="btn">Submit Feedback</button>
+            </form>
+            <p><a href="/my_bookings">Cancel</a></p>
+        </div>
+    </div>
+</body>
+</html>

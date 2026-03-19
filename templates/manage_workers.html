@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Manage Workers - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">Admin Panel</div>
+        <div class="nav-links">
+            <a href="/admin/dashboard">Dashboard</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <h2>Manage Workers</h2>
+        <a href="/admin/add_worker" class="btn" style="width: auto; display: inline-block; margin-bottom: 20px;">Add New Worker</a>
+        
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Address</th>
+                    <th>Skills</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for worker in workers %}
+                <tr>
+                    <td>{{ worker.worker_id }}</td>
+                    <td>{{ worker.worker_name }}</td>
+                    <td>{{ worker.phone }}</td>
+                    <td>{{ worker.email }}</td>
+                    <td>{{ worker.address }}</td>
+                    <td>{{ worker.skills }}</td>
+                    <td>
+                        <a href="/admin/edit_worker/{{ worker.worker_id }}" style="color: blue; margin-right: 10px;">Edit</a>
+                        <a href="/admin/delete_worker/{{ worker.worker_id }}" style="color: red;" onclick="return confirm('Are you sure? This will delete the worker and their login.')">Delete</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7">No workers found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

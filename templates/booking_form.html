@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book a Service - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <!-- The service name will be passed from Python later -->
+            <h2>Book: {{ service.service_name if service else 'Service' }}</h2>
+            
+            {% if error %}
+            <div style="color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; margin-bottom: 15px; border-radius: 5px;">
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            <p>The booking will be recorded with the current date and time.</p> 
+
+            <form action="/book_service" method="POST">
+                <!-- This hidden input sends the service_id to the backend -->
+                <input type="hidden" name="service_id" value="{{ service.service_id }}">
+                
+                <div style="text-align: left; margin-bottom: 20px;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 10px;">Choose a Worker (Optional):</label>
+                    
+                    <div style="margin-bottom: 10px;">
+                        <input type="radio" id="no_worker" name="worker_id" value="none" checked>
+                        <label for="no_worker">No Preference (Assign later)</label>
+                    </div>
+
+                    {% for worker in workers %}
+                    <div style="margin-bottom: 10px; padding: 10px; border: 1px solid #eee; border-radius: 5px;">
+                        <input type="radio" id="worker_{{ worker.worker_id }}" name="worker_id" value="{{ worker.worker_id }}">
+                        <label for="worker_{{ worker.worker_id }}">
+                            <strong>{{ worker.worker_name }}</strong>
+                            <br>
+                            <span style="color: #f39c12;">★ {{ "%.1f"|format(worker.avg_rating) if worker.avg_rating else 'New' }}</span>
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div style="text-align: left; margin-bottom: 20px;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 10px;">Payment Method:</label>
+                    <div style="margin-bottom: 5px;">
+                        <input type="radio" id="cash" name="payment_method" value="cash" checked>
+                        <label for="cash">Cash after Service</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="online" name="payment_method" value="online">
+                        <label for="online">Pay Online Now (Credit/Debit Card)</label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">Confirm Booking</button>
+            </form>
+            <p><a href="/dashboard">Cancel and go back</a></p>
+        </div>
+    </div>
+
+</body>
+</html>

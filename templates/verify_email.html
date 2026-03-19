@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="backcolor">
+    <div class="container">
+        <div class="login-box">
+            <h2>Verify Your Email</h2>
+            <p>An OTP has been sent to <strong>{{ session.get('pending_email') }}</strong>. Please enter it below to complete your registration. The code is valid for 10 minutes.</p>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <p style="color: {% if category == 'error' %}red{% else %}green{% endif %}; margin-bottom: 15px; font-weight: bold;">
+                            {{ message }}
+                        </p>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form action="{{ url_for('verify_email') }}" method="POST">
+                <div class="input-group">
+                    <label for="otp">Enter OTP</label>
+                    <input type="text" id="otp" name="otp" placeholder="6-digit code" required maxlength="6">
+                </div>
+                <button type="submit" class="btn">Verify and Register</button>
+            </form>
+            <p style="margin-top: 20px;"><a href="{{ url_for('resend_otp') }}">Resend OTP</a></p>
+            <p><a href="{{ url_for('home') }}">Cancel</a></p>
+        </div>
+    </div>
+</body>
+</html>

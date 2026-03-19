@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">Admin Panel</div>
+        <div class="nav-links">
+            <a href="/admin/manage_workers">Manage Workers</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+       <div class="welcome-section">
+            <h1>System Management</h1>
+        </div>
+
+        <div class="admin-grid">
+            <div class="admin-card">
+                <h3>Manage Workers</h3>
+                <p>View, add, or remove workers from the system.</p>
+                <a href="/admin/manage_workers" class="btn">Go to Workers</a>
+            </div>
+        </div>
+
+        {% if pending_workers %}
+        <div style="margin-top: 40px;">
+            <h2>Pending Worker Registrations</h2>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Address</th>
+                        <th>Skills</th>
+                        <th>Username</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for worker in pending_workers %}
+                    <tr>
+                        <td>{{ worker.worker_name }}</td>
+                        <td>{{ worker.phone }}</td>
+                        <td>{{ worker.email }}</td>
+                        <td>{{ worker.address }}</td>
+                        <td>{{ worker.skills }}</td>
+                        <td>{{ worker.username }}</td>
+                        <td>
+                            <form action="{{ url_for('accept_worker', pending_id=worker.pending_id) }}" method="POST" style="display:inline;">
+                                <button type="submit" style="color: green; background:none; border:none; cursor:pointer; font-size:1em; text-decoration:underline; margin-right: 10px;">Accept</button>
+                            </form>
+                            <form action="{{ url_for('reject_worker', pending_id=worker.pending_id) }}" method="POST" style="display:inline;">
+                                <button type="submit" style="color: red; background:none; border:none; cursor:pointer; font-size:1em; text-decoration:underline;" onclick="return confirm('Are you sure you want to reject this applicant?')">Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <div style="margin-top: 40px;">
+            <h2>All Bookings</h2>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Booking ID</th>
+                        <th>Customer</th>
+                        <th>Worker</th>
+                        <th>Service</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for booking in bookings %}
+                    <tr>
+                        <td>{{ booking.booking_id }}</td>
+                        <td>{{ booking.cust_name }}</td>
+                        <td>{{ booking.worker_name if booking.worker_name else 'Unassigned' }}</td>
+                        <td>{{ booking.service_name }}</td>
+                        <td>{{ booking.booking_date }}</td>
+                        <td>{{ booking.booking_status }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_booking', booking_id=booking.booking_id) }}" style="color: blue; font-weight: bold;">Edit</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top: 40px;">
+            <h2>Service Catalog</h2>
+            <div class="services-grid">
+                {% for service in services %}
+                <div class="service-card">
+                    <div class="service-icon">
+                        {% if service.category == 'pickup' %}👕
+                        {% elif 'Cleaning' in service.service_name %}🧹
+                        {% elif 'Gardening' in service.service_name %}🌱
+                        {% else %}🔧
+                        {% endif %}
+                    </div>
+                    <h3>{{ service.service_name }}</h3>
+                    <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
+                    <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

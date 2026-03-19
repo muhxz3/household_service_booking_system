@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Booking - Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h2>Edit Booking #{{ booking.booking_id }}</h2>
+            
+            <div style="text-align: left; margin-bottom: 20px; color: #555;">
+                <p><strong>Customer:</strong> {{ booking.cust_name }}</p>
+                <p><strong>Service:</strong> {{ booking.service_name }}</p>
+                <p><strong>Date:</strong> {{ booking.booking_date }}</p>
+            </div>
+
+            <form action="{{ url_for('edit_booking', booking_id=booking.booking_id) }}" method="POST">
+                
+                <div class="input-group">
+                    <label for="worker_id">Assigned Worker</label>
+                    <select id="worker_id" name="worker_id">
+                        <option value="none">-- No Worker Assigned --</option>
+                        {% for worker in workers %}
+                        <option value="{{ worker.worker_id }}" 
+                            {% if booking.worker_id == worker.worker_id %}selected{% endif %}>
+                            {{ worker.worker_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label for="status">Booking Status</label>
+                    <select id="status" name="status">
+                        <option value="pending" {% if booking.booking_status == 'pending' %}selected{% endif %}>Pending</option>
+                        <option value="assigned" {% if booking.booking_status == 'assigned' %}selected{% endif %}>Assigned</option>
+                        <option value="in_progress" {% if booking.booking_status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                        <option value="completed" {% if booking.booking_status == 'completed' %}selected{% endif %}>Completed</option>
+                        <option value="cancelled" {% if booking.booking_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn">Update Booking</button>
+            </form>
+            
+            <p><a href="{{ url_for('admin_dashboard') }}">Cancel</a></p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Eazy Day - Home</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="#services">Services</a>
+            <a href="/register">Register</a>
+            <a href="/login">Login</a>
+            <a href="{{ url_for('worker_register') }}">Work With Us</a>
+        </div>
+    </nav>
+
+    <!-- Hero Section (Welcome Banner) -->
+    <header class="hero">
+        <div class="hero-content">
+            <h1>Expert Home Services in Kasargod</h1>
+            <p>Cleaning, Laundry, Plumbing & More.</p>
+            <a href="/register" class="btn">Get Started</a>
+        </div>
+    </header>
+
+    <!-- Services Preview -->
+    <section class="dashboard-container" id="services">
+        <h2 style="text-align:center; margin-bottom: 30px; color: var(--text-dark);">Our Services</h2>
+        <div class="services-grid">
+            {% for service in services %}
+            <div class="service-card">
+                <div class="service-icon">
+                    {% if service.category == 'pickup' %}👕
+                    {% elif 'Cleaning' in service.service_name %}🧹
+                    {% elif 'Gardening' in service.service_name %}🌱
+                    {% else %}🔧
+                    {% endif %}
+                </div>
+                <h3>{{ service.service_name }}</h3>
+                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
+                <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
+                <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+            </div>
+            {% else %}
+            <p>Services will be listed here soon.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Service Areas -->
+    <section class="dashboard-container" style="margin-top: 50px; margin-bottom: 50px;">
+        <h2 style="text-align:center; margin-bottom: 30px; color: var(--text-dark);">Service Areas</h2>
+        <div class="login-box" style="max-width: 800px; margin: 0 auto; text-align: left;">
+            <p>We operate within a 20km radius of New Bus Stand, Kasargod.</p>
+            <ul style="line-height: 1.8; color: var(--text-dark);">
+                <li><strong>North(Monday & Friday):</strong> Kumbala, Arikkady, Uppala</li>
+                <li><strong>South(Tuesday & Saturday):</strong> Chandragiri, Bekal, Nellikunnu, Pallikkara</li>
+                <li><strong>East(Wednesday):</strong> Maipady, Madhur, Patla</li>
+                <li><strong>West(Thursday):</strong> Thalangara Area</li>
+            </ul>
+            <p style="margin-top: 15px; font-size: 0.9em; color: var(--text-light);">* Pick and delivery charges extra. <strong>Sunday</strong> is off for some services.</p>
+        </div>
+    </section>
+</body>
+</html>

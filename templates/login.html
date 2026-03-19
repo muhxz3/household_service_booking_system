@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="backcolor">
+    <div class="container">
+        <div class="login-box">
+            {% if not role %}
+            <h2>Select Your Role</h2>
+            <p>Please choose how you want to login:</p>
+            
+            <a href="{{ url_for('login_page', role='customer') }}" class="btn">Customer</a>
+            <a href="{{ url_for('login_page', role='worker') }}" class="btn">Worker</a>
+            <a href="{{ url_for('login_page', role='admin') }}" class="btn">Admin</a>
+            
+            <p style="margin-top: 20px;"><a href="/">Back to Home</a></p>
+            {% else %}
+            <h2>Login as {{ role|capitalize }}</h2>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <p style="color: {% if category == 'error' %}red{% else %}green{% endif %}; margin-bottom: 15px; font-weight: bold;">
+                            {{ message }}
+                        </p>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            <form action="{{ url_for('login_page', role=role) }}" method="POST">
+                <input type="hidden" name="role" value="{{ role }}">
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <p style="text-align: right; margin: 5px 0 15px;"><a href="{{ url_for('forgot_password') }}" style="font-size: 0.9em;">Forgot Password?</a></p>
+                <button type="submit" class="btn">Login</button>
+            </form>
+            <p style="margin-top: 15px;"><a href="{{ url_for('login_page') }}">Change Role</a></p>
+            {% if role == 'customer' %}
+            <p>New here? <a href="{{ url_for('register_page') }}">Create an account</a></p>
+            {% elif role == 'worker' %}
+            <p>New here? <a href="{{ url_for('worker_register') }}">Create an account</a></p>
+            {% endif %}
+            <a href="{{ url_for('home') }}">Back to Home</a>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

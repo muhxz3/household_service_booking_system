@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="/dashboard">Home</a>
+            <a href="/my_bookings">My Bookings</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="dashboard-container">
+        <div class="welcome-section">
+            <h1>Welcome, {{ session.username }}!</h1>
+            <p>Select a service to book.</p>
+        </div>
+
+        <!-- Services Grid -->
+        <div class="services-grid">
+            {% for service in services %}
+            <div class="service-card">
+                <div class="service-icon">
+                    {# A simple logic to assign icons based on service category or name #}
+                    {% if service.category == 'pickup' %}👕
+                    {% elif 'Cleaning' in service.service_name %}🧹
+                    {% elif 'Gardening' in service.service_name %}🌱
+                    {% else %}🔧
+                    {% endif %}
+                </div>
+               <h3>{{ service.service_name }}</h3>
+                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
+                <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+            </div>
+            {% else %}
+            <p>No services are available at the moment. Please check back later.</p>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>

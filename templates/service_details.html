@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Details - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/register">Register</a>
+            <a href="/login">Login</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="login-box">
+            {% if service %}
+                <h2>{{ service.service_name }}</h2>
+                <p style="font-size: 1.2rem; color: var(--primary-color); font-weight: bold;">Price: ₹{{ "%.2f"|format(service.price) }}</p>
+                <p><strong>Category:</strong> {{ service.category|capitalize }}</p>
+                <p style="margin: 20px 0; color: var(--text-light);">This service is provided by our expert professionals. We ensure high quality and satisfaction.</p>
+                {% if session.role != 'worker' %}
+                <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+                {% endif %}
+            {% else %}
+                <h2>Service Not Found</h2>
+                <p>The requested service does not exist.</p>
+            {% endif %}
+            <p style="margin-top: 20px;"><a href="/">Back to Home</a></p>
+        </div>
+    </div>
+</body>
+</html>

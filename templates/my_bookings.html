@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Bookings - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="/dashboard">Home</a>
+            <a href="/dashboard">Book Service</a>
+            <a href="/my_bookings">My Bookings</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="welcome-section">
+            <h1>Your Booking History</h1>
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Booking ID</th>
+                    <th>Service</th>
+                    <th>Date & Time</th>
+                    <th>Worker Assigned</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for booking in bookings %}
+                <tr>
+                    <td>{{ booking.booking_id }}</td>
+                    <td>{{ booking.service_name }}</td>
+                    <td>{{ booking.booking_date }} at {{ booking.booking_time }}</td>
+                    <td>{{ booking.worker_name if booking.worker_name else 'Not Assigned' }}</td>
+                    <td>{{ booking.booking_status }}</td>
+                    <td>
+                        {% if booking.booking_status == 'completed' %}
+                        <a href="{{ url_for('feedback', booking_id=booking.booking_id) }}" style="color: var(--primary-color); font-weight: bold; text-decoration: underline;">Rate Service</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center;">No bookings found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
