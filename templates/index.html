@@ -41,35 +41,8 @@
     <section class="dashboard-container" id="services">
         <h2 style="text-align:center; margin-bottom: 30px; color: var(--text-dark);">Our Services</h2>
         
-        <!-- Standard Services -->
-        <div class="services-grid">
-            {% for service in services %}
-            {% if service.service_type == 'regular' %}
-            <div class="service-card">
-                <div class="service-icon">
-                    {% if service.category == 'pickup' %}👕
-                    {% elif 'Cleaning' in service.service_name %}🧹
-                    {% elif 'Gardening' in service.service_name %}🌱
-                    {% else %}🔧
-                    {% endif %}
-                </div>
-                <h3>{{ service.service_name }}</h3>
-                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
-                <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
-                {% if session.loggedin %}
-                    <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
-                {% else %}
-                    <a href="{{ url_for('login_page') }}" class="btn">Book Now</a>
-                {% endif %}
-            </div>
-            {% endif %}
-            {% else %}
-            <p>Services will be listed here soon.</p>
-            {% endfor %}
-        </div>
-
         <!-- Premium Services -->
-        <h2 style="text-align:center; margin: 50px 0 30px 0; color: #d35400;">✨ Premium Services</h2>
+        <h2 style="text-align:center; margin: 0 0 30px 0; color: #d35400;">Premium Services</h2>
         <div class="services-grid premium-grid">
             {% for service in services %}
             {% if service.service_type == 'premium' %}
@@ -94,6 +67,32 @@
             {% endif %}
             {% endfor %}
         </div>
+
+        <!-- Standard Services -->
+        <h2 style="text-align:center; margin: 50px 0 30px 0; color: var(--text-dark);">Regular Services</h2>
+        <div class="services-grid">
+            {% for service in services %}
+            {% if service.service_type == 'regular' %}
+            <div class="service-card">
+                <div class="service-icon">
+                    {% if service.category == 'pickup' %}👕
+                    {% elif 'Cleaning' in service.service_name %}🧹
+                    {% elif 'Gardening' in service.service_name %}🌱
+                    {% else %}🔧
+                    {% endif %}
+                </div>
+                <h3>{{ service.service_name }}</h3>
+                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
+                <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
+                {% if session.loggedin %}
+                    <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+                {% else %}
+                    <a href="{{ url_for('login_page') }}" class="btn">Book Now</a>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
     </section>
 
     <!-- Service Areas -->
@@ -110,5 +109,12 @@
             <p style="margin-top: 15px; font-size: 0.9em; color: var(--text-light);">* Pick and delivery charges extra. <strong>Sunday</strong> is off for some services.</p>
         </div>
     </section>
+
+    <footer class="footer">
+        <p><strong>My Eazy Day</strong></p>
+        <p>📍 Near Canara Bank, New Bus Stand, Kasaragod, 671124</p>
+        <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
+        <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
+    </footer>
 </body>
 </html>

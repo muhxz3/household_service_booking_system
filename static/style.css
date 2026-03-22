@@ -430,3 +430,26 @@ a {
 .btn-premium:hover {
     background-color: #a04000;
 }
+
+.profile-text {
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    border: 1px solid var(--border-color);
+}
+
+/* --- Footer --- */
+.footer {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 20px;
+    text-align: center;
+    margin-top: 50px;
+}
+.footer p {
+    margin: 5px 0;
+}
+.footer a {
+    color: #fff;
+    text-decoration: underline;
+}

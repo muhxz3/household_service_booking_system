@@ -54,6 +54,9 @@ def send_otp_email(email, otp, purpose='registration'):
     elif purpose == 'password_reset':
         subject = 'Your My Eazy Day Password Reset OTP'
         body = f'Your One-Time Password (OTP) to reset your password is: {otp}\nThis code is valid for 10 minutes.'
+    elif purpose == 'email_change':
+        subject = 'Verify Your New Email Address'
+        body = f'Your One-Time Password (OTP) to verify your new email address is: {otp}\nThis code is valid for 10 minutes.'
     else:
         subject = 'Your My Eazy Day OTP'
         body = f'Your One-Time Password (OTP) is: {otp}\nThis code is valid for 10 minutes.'
@@ -67,6 +70,19 @@ def send_otp_email(email, otp, purpose='registration'):
         return True
     except Exception as e:
         print(f"Error sending email: {e}")
+        return False
+
+def send_notification_email(to_email, subject, body):
+    """Sends a general notification email."""
+    msg = Message(subject,
+                  sender=MAIL_SENDER,
+                  recipients=[to_email])
+    msg.body = body
+    try:
+        mail.send(msg)
+        return True
+    except Exception as e:
+        print(f"Error sending notification email: {e}")
         return False
 
 # --- Routes (The Menu) ---
@@ -617,6 +633,7 @@ def worker_dashboard():
 
     login_id = session['id']
     jobs = []
+    worker_rating = 0
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -629,7 +646,7 @@ def worker_dashboard():
         worker_id = worker['worker_id']
         # Fetch jobs assigned to this worker
         cursor.execute("""
-            SELECT b.booking_id, c.cust_name, s.service_name, b.booking_date, b.booking_time, b.booking_status
+            SELECT b.booking_id, c.cust_name, s.service_name, s.service_type, b.booking_date, b.booking_time, b.booking_status
             FROM booking b
             JOIN customer c ON b.customer_id = c.customer_id
             JOIN service s ON b.service_id = s.service_id
@@ -637,12 +654,23 @@ def worker_dashboard():
             ORDER BY b.booking_date ASC
         """, (worker_id,))
         jobs = cursor.fetchall()
+        
+        # Calculate average rating
+        cursor.execute("""
+            SELECT AVG(f.rating) as avg_rating
+            FROM feedback f
+            JOIN booking b ON f.booking_id = b.booking_id
+            WHERE b.worker_id = %s
+        """, (worker_id,))
+        result = cursor.fetchone()
+        if result and result['avg_rating']:
+            worker_rating = result['avg_rating']
 
     cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service ORDER BY service_type DESC, service_name ASC")
     services = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template('worker_dashboard.html', jobs=jobs, services=services)
+    return render_template('worker_dashboard.html', jobs=jobs, services=services, worker_rating=worker_rating)
 
 @app.route('/worker/assigned_jobs')
 def worker_assigned_jobs():
@@ -696,6 +724,12 @@ def worker_edit_booking(booking_id):
                 if payment and payment['payment_method'] == 'cash':
                     cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
                     flash('Job and cash payment marked as completed.', 'info')
+                
+                # Notify Customer of completion
+                cursor.execute("SELECT c.email, c.cust_name, s.service_name FROM booking b JOIN customer c ON b.customer_id = c.customer_id JOIN service s ON b.service_id = s.service_id WHERE b.booking_id = %s", (booking_id,))
+                details = cursor.fetchone()
+                if details:
+                    send_notification_email(details['email'], f"Service Completed - Booking #{booking_id}", f"Hello {details['cust_name']},\n\nYour service '{details['service_name']}' has been marked as completed by the worker.\n\nWe hope you are satisfied with our work. Please log in to your dashboard to provide feedback.\n\nThank you!")
                 else:
                     flash('Job marked as completed.', 'info')
             elif status == 'cancelled':
@@ -795,7 +829,7 @@ def admin_dashboard():
     cursor = conn.cursor(dictionary=True)
     # Fetch all bookings for the admin view
     cursor.execute("""
-        SELECT b.booking_id, c.cust_name, w.worker_name, s.service_name, b.booking_date, b.booking_status
+        SELECT b.booking_id, c.cust_name, w.worker_name, s.service_name, s.service_type, b.booking_date, b.booking_status
         FROM booking b
         JOIN customer c ON b.customer_id = c.customer_id
         JOIN service s ON b.service_id = s.service_id
@@ -855,6 +889,26 @@ def edit_booking(booking_id):
     cursor.close()
     conn.close()
     return render_template('edit_booking.html', booking=booking, workers=workers)
+
+@app.route('/admin/delete_booking/<int:booking_id>')
+def delete_booking(booking_id):
+    if 'loggedin' not in session or session['role'] != 'admin':
+        return redirect(url_for('login_page'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Delete related records to satisfy foreign key constraints
+        cursor.execute("DELETE FROM payment WHERE booking_id = %s", (booking_id,))
+        cursor.execute("DELETE FROM feedback WHERE booking_id = %s", (booking_id,))
+        cursor.execute("DELETE FROM booking WHERE booking_id = %s", (booking_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"Error deleting booking: {e}")
+
+    cursor.close()
+    conn.close()
+    return redirect(url_for('admin_dashboard'))
 
 @app.route('/book/<int:service_id>')
 def booking_form(service_id):
@@ -920,7 +974,7 @@ def book_service():
     service = cursor.fetchone()
 
     # 2. Fetch Customer Details
-    cursor.execute("SELECT customer_id, region FROM customer WHERE login_id = %s", (login_id,))
+    cursor.execute("SELECT customer_id, region, email, cust_name FROM customer WHERE login_id = %s", (login_id,))
     customer = cursor.fetchone()
 
     if customer and service:
@@ -958,6 +1012,10 @@ def book_service():
         
         conn.commit()
         
+        # Send Booking Confirmation Email (for Cash payments or initial booking state)
+        if customer.get('email'):
+            send_notification_email(customer['email'], f"Booking Confirmed - #{booking_id}", f"Hello {customer['cust_name']},\n\nYour booking for {service['service_name']} has been placed successfully.\nBooking ID: {booking_id}\nDate: {booking_date}\nTime: {booking_time}\n\nThank you for choosing My Eazy Day.")
+
         # If online payment is selected, redirect to payment page
         if payment_method == 'online':
             cursor.close()
@@ -1043,7 +1101,7 @@ def process_payment_simulation():
     result = PaymentSimulator.simulate_payment_scenario(scenario, booking_id, amount)
     
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     
     try:
         if result['status'] == 'completed':
@@ -1051,31 +1109,37 @@ def process_payment_simulation():
             cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
             # Schema limitation: booking_status stays 'pending' until worker completes it
             conn.commit()
-            flash(result['message'], 'success')
             
-        elif result['status'] == 'failed':
-            # Payment failed - Map to 'cancelled' for schema compatibility
-            cursor.execute("UPDATE payment SET payment_status = 'cancelled' WHERE booking_id = %s", (booking_id,))
+            # Notify Customer of successful payment
+            cursor.execute("SELECT c.email, c.cust_name, s.service_name FROM booking b JOIN customer c ON b.customer_id = c.customer_id JOIN service s ON b.service_id = s.service_id WHERE b.booking_id = %s", (booking_id,))
+            details = cursor.fetchone()
+            if details:
+                send_notification_email(details['email'], f"Payment Successful - Booking #{booking_id}", f"Hello {details['cust_name']},\n\nWe have received your payment of ₹{amount} for booking #{booking_id} ({details['service_name']}).\n\nYour booking is now confirmed.")
+
+            return render_template('payment_result.html', status='success', message=result['message'], booking_id=booking_id)
+            
+        elif result['status'] == 'failed' or result['status'] == 'timeout':
+            # Payment failed - Delete booking as per requirement
+            cursor.execute("DELETE FROM payment WHERE booking_id = %s", (booking_id,))
+            cursor.execute("DELETE FROM booking WHERE booking_id = %s", (booking_id,))
             conn.commit()
-            flash(result['message'], 'error')
+            return render_template('payment_result.html', status='failed', message=result['message'])
             
         elif result['status'] == 'processing':
             # Payment processing - stays in pending state (Map 'processing' to 'pending')
             cursor.execute("UPDATE payment SET payment_status = 'pending' WHERE booking_id = %s", (booking_id,))
             conn.commit()
-            flash(result['message'], 'info')
+            return render_template('payment_result.html', status='info', message=result['message'], booking_id=booking_id)
             
         else:
-            flash('Invalid payment scenario', 'error')
+            return render_template('payment_result.html', status='failed', message='Invalid payment scenario')
             
     except Exception as e:
         print(f"Payment simulation error: {e}")
-        flash('An error occurred during payment processing.', 'error')
+        return render_template('payment_result.html', status='failed', message='An error occurred during payment processing.')
     finally:
         cursor.close()
         conn.close()
-    
-    return redirect(url_for('my_bookings'))
 
 @app.route('/my_bookings')
 def my_bookings():
@@ -1112,6 +1176,198 @@ def my_bookings():
     conn.close()
     return render_template('my_bookings.html', bookings=bookings)
 
+@app.route('/customer/profile')
+def customer_profile():
+    if 'loggedin' not in session or session['role'] != 'customer':
+        return redirect(url_for('login_page'))
+    
+    login_id = session['id']
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT c.*, l.username FROM customer c JOIN login l ON c.login_id = l.login_id WHERE l.login_id = %s", (login_id,))
+    customer = cursor.fetchone()
+    
+    cursor.close()
+    conn.close()
+
+    # Mask confidential info for display
+    if customer:
+        # Mask Email
+        if '@' in customer['email']:
+            parts = customer['email'].split('@')
+            if len(parts[0]) > 2:
+                customer['email'] = parts[0][:2] + "****@" + parts[1]
+            else:
+                customer['email'] = "****@" + parts[1]
+        
+        # Mask Phone
+        if len(customer['phone']) > 4:
+            customer['phone'] = "******" + customer['phone'][-4:]
+
+    return render_template('customer_profile.html', customer=customer)
+
+@app.route('/customer/profile/edit', methods=['GET', 'POST'])
+def customer_edit_profile():
+    if 'loggedin' not in session or session['role'] != 'customer':
+        return redirect(url_for('login_page'))
+    
+    login_id = session['id']
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    if request.method == 'POST':
+        cust_name = request.form['cust_name']
+        email = request.form['email']
+        phone = request.form['phone']
+        address = request.form['address']
+        region = request.form['region']
+        username = request.form['username']
+        new_password = request.form['password']
+
+        # Check for uniqueness conflicts (excluding current user)
+        cursor.execute("SELECT customer_id FROM customer WHERE phone = %s AND login_id != %s", (phone, login_id))
+        if cursor.fetchone():
+            flash('Phone number is already associated with another account.', 'error')
+            return redirect(url_for('customer_edit_profile'))
+
+        cursor.execute("SELECT login_id FROM login WHERE username = %s AND login_id != %s", (username, login_id))
+        if cursor.fetchone():
+            flash('Username is already taken.', 'error')
+            return redirect(url_for('customer_edit_profile'))
+
+        # Get current email to check for changes
+        cursor.execute("SELECT email FROM customer WHERE login_id = %s", (login_id,))
+        current_email = cursor.fetchone()['email']
+
+        if email != current_email:
+            # Email has changed, verify uniqueness
+            cursor.execute("SELECT email FROM customer WHERE email = %s", (email,))
+            if cursor.fetchone():
+                flash('This email is already registered.', 'error')
+                return redirect(url_for('customer_edit_profile'))
+            
+            cursor.execute("SELECT email FROM worker WHERE email = %s", (email,))
+            if cursor.fetchone():
+                flash('This email is already registered.', 'error')
+                return redirect(url_for('customer_edit_profile'))
+
+            # Store pending data in session and initiate OTP
+            session['pending_profile_update'] = {
+                'cust_name': cust_name, 'email': email, 'phone': phone,
+                'address': address, 'region': region, 'username': username,
+                'password': new_password
+            }
+            
+            otp = generate_otp()
+            expires_at = datetime.now() + timedelta(minutes=10)
+            
+            cursor.execute("""
+                INSERT INTO otp_store (email, otp, purpose, expires_at)
+                VALUES (%s, %s, 'login', %s)
+                ON DUPLICATE KEY UPDATE otp = VALUES(otp), expires_at = VALUES(expires_at)
+            """, (email, otp, expires_at))
+            conn.commit()
+
+            if send_otp_email(email, otp, purpose='email_change'):
+                flash('An OTP has been sent to your new email address.', 'success')
+                cursor.close()
+                conn.close()
+                return redirect(url_for('verify_profile_email_change'))
+            else:
+                flash('Failed to send OTP. Please try again.', 'error')
+                return redirect(url_for('customer_edit_profile'))
+
+        else:
+            # Standard update (no email change)
+            cursor.execute("UPDATE customer SET cust_name=%s, phone=%s, address=%s, region=%s WHERE login_id=%s",
+                        (cust_name, phone, address, region, login_id))
+            
+            if new_password:
+                cursor.execute("UPDATE login SET username=%s, password=%s WHERE login_id=%s", (username, new_password, login_id))
+            else:
+                cursor.execute("UPDATE login SET username=%s WHERE login_id=%s", (username, login_id))
+                
+            conn.commit()
+            session['username'] = username
+            flash('Profile updated successfully!', 'success')
+            return redirect(url_for('customer_profile'))
+
+    cursor.execute("SELECT c.*, l.username FROM customer c JOIN login l ON c.login_id = l.login_id WHERE l.login_id = %s", (login_id,))
+    customer = cursor.fetchone()
+    
+    cursor.close()
+    conn.close()
+    return render_template('customer_edit_profile.html', customer=customer)
+
+@app.route('/verify_profile_email_change', methods=['GET', 'POST'])
+def verify_profile_email_change():
+    if 'loggedin' not in session or 'pending_profile_update' not in session:
+        return redirect(url_for('customer_edit_profile'))
+
+    new_data = session['pending_profile_update']
+    new_email = new_data['email']
+
+    if request.method == 'POST':
+        otp = request.form['otp']
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("SELECT * FROM otp_store WHERE email = %s AND otp = %s AND purpose = 'login'", (new_email, otp))
+        otp_record = cursor.fetchone()
+
+        if otp_record and datetime.now() < otp_record['expires_at']:
+            login_id = session['id']
+            
+            # Apply all updates
+            cursor.execute("UPDATE customer SET cust_name=%s, email=%s, phone=%s, address=%s, region=%s WHERE login_id=%s",
+                        (new_data['cust_name'], new_data['email'], new_data['phone'], new_data['address'], new_data['region'], login_id))
+            
+            if new_data['password']:
+                cursor.execute("UPDATE login SET username=%s, password=%s WHERE login_id=%s", (new_data['username'], new_data['password'], login_id))
+            else:
+                cursor.execute("UPDATE login SET username=%s WHERE login_id=%s", (new_data['username'], login_id))
+
+            # Cleanup
+            cursor.execute("DELETE FROM otp_store WHERE email = %s AND purpose = 'login'", (new_email,))
+            conn.commit()
+            
+            session['username'] = new_data['username']
+            session.pop('pending_profile_update', None)
+            
+            flash('Profile and email updated successfully!', 'success')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('customer_profile'))
+        else:
+            flash('Invalid or expired OTP.', 'error')
+            cursor.close()
+            conn.close()
+
+    return render_template('verify_email_change.html', email=new_email)
+
+@app.route('/resend_profile_email_otp')
+def resend_profile_email_otp():
+    if 'pending_profile_update' in session:
+        email = session['pending_profile_update']['email']
+        otp = generate_otp()
+        # Re-use existing OTP logic or direct update
+        # For simplicity, redirecting to edit logic which regenerates if posted, 
+        # but here we need to regenerate manually.
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        expires_at = datetime.now() + timedelta(minutes=10)
+        cursor.execute("UPDATE otp_store SET otp = %s, expires_at = %s WHERE email = %s AND purpose = 'login'", 
+                       (otp, expires_at, email))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        send_otp_email(email, otp, purpose='email_change')
+        flash('A new OTP has been sent.', 'success')
+        return redirect(url_for('verify_profile_email_change'))
+    return redirect(url_for('customer_edit_profile'))
+
 @app.route('/feedback/<int:booking_id>', methods=['GET', 'POST'])
 def feedback(booking_id):
     if 'loggedin' not in session:
@@ -1125,7 +1381,6 @@ def feedback(booking_id):
     existing_feedback = cursor.fetchone()
 
     if existing_feedback:
-        flash('You have already submitted feedback for this booking.', 'info')
         cursor.close()
         conn.close()
         return redirect(url_for('my_bookings'))
@@ -1137,7 +1392,13 @@ def feedback(booking_id):
         cursor.execute("INSERT INTO feedback (booking_id, rating, comments) VALUES (%s, %s, %s)", 
                         (booking_id, rating, comments))
         conn.commit()
-        flash('Thank you for your feedback!', 'success')
+        
+        # Notify Worker of new feedback
+        cursor.execute("SELECT w.email, w.worker_name FROM booking b JOIN worker w ON b.worker_id = w.worker_id WHERE b.booking_id = %s", (booking_id,))
+        worker_details = cursor.fetchone()
+        if worker_details:
+            send_notification_email(worker_details['email'], f"New Feedback Received - Booking #{booking_id}", f"Hello {worker_details['worker_name']},\n\nYou have received a new rating of {rating}/5 for booking #{booking_id}.\n\nComment: {comments}")
+
         cursor.close()
         conn.close()
         return redirect(url_for('my_bookings'))
@@ -1267,6 +1528,9 @@ def delete_worker(worker_id):
         # Get login_id to delete login record too
         cursor.execute("SELECT login_id FROM worker WHERE worker_id = %s", (worker_id,))
         result = cursor.fetchone()
+        
+        # Unassign the worker from any existing bookings to satisfy Foreign Key constraints
+        cursor.execute("UPDATE booking SET worker_id = NULL WHERE worker_id = %s", (worker_id,))
         
         cursor.execute("DELETE FROM provides WHERE worker_id = %s", (worker_id,))
         cursor.execute("DELETE FROM worker WHERE worker_id = %s", (worker_id,))

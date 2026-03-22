@@ -19,7 +19,11 @@
     <div class="dashboard-container">
         <div class="welcome-section">
             <h1>Your Assigned Jobs</h1>
-            <p>Here are the jobs assigned to you.</p>
+            {% if worker_rating > 0 %}
+                <p style="font-size: 1.1em; margin-top: 10px;"><strong>Current Rating:</strong> <span style="color: #f39c12;">★ {{ "%.1f"|format(worker_rating) }}</span> / 5.0</p>
+            {% else %}
+                <p style="font-size: 1.1em; margin-top: 10px;"><strong>Current Rating:</strong> No ratings yet</p>
+            {% endif %}
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -36,6 +40,7 @@
             {% endif %}
         {% endwith %}
 
+        <h2 style="color: #d35400;">Assigned Jobs (Premium)</h2>
         <table class="data-table">
             <thead>
                 <tr>
@@ -49,6 +54,44 @@
             </thead>
             <tbody>
                 {% for job in jobs %}
+                {% if job.service_type == 'premium' %}
+                <tr style="background-color: #fff8e1;">
+                    <td>{{ job.booking_id }}</td>
+                    <td>{{ job.cust_name }}</td>
+                    <td><strong>{{ job.service_name }}</strong></td>
+                    <td>{{ job.booking_date }} at {{ job.booking_time }}</td>
+                    <td>
+                        <span class="status-badge status-{{ job.booking_status.lower() }}">
+                            {{ job.booking_status }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('booking_details', booking_id=job.booking_id) }}">View Details</a>
+                        {% if job.booking_status not in ['completed', 'cancelled'] %}
+                            <a href="{{ url_for('worker_edit_booking', booking_id=job.booking_id) }}" style="margin-left: 10px; color: blue; font-weight: bold;">Edit</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h2 style="margin-top: 40px;">Assigned Jobs</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Booking ID</th>
+                    <th>Customer Name</th>
+                    <th>Service</th>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                {% if job.service_type != 'premium' %}
                 <tr>
                     <td>{{ job.booking_id }}</td>
                     <td>{{ job.cust_name }}</td>
@@ -66,8 +109,7 @@
                         {% endif %}
                     </td>
                 </tr>
-                {% else %}
-                <tr><td colspan="6">No jobs assigned yet.</td></tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
@@ -92,5 +134,12 @@
             </div>
         </div>
     </div>
+
+    <footer class="footer">
+        <p><strong>My Eazy Day</strong></p>
+        <p>📍 Near Canara Bank, New Bus Stand, Kasaragod, 671124</p>
+        <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
+        <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
+    </footer>
 </body>
 </html>

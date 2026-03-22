@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Result - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="backcolor">
+    <div class="container">
+        <div class="login-box">
+            {% if status == 'success' %}
+                <h2 style="color: #28a745;">Payment Successful!</h2>
+                <div style="font-size: 3rem; margin: 20px 0;">✅</div>
+                <p>{{ message }}</p>
+                <p>Your booking #{{ booking_id }} has been confirmed.</p>
+                <a href="{{ url_for('my_bookings') }}" class="btn">View My Bookings</a>
+            {% elif status == 'info' %}
+                <h2 style="color: #ffc107;">Payment Processing</h2>
+                <div style="font-size: 3rem; margin: 20px 0;">🔄</div>
+                <p>{{ message }}</p>
+                <p>Your booking is pending confirmation.</p>
+                <a href="{{ url_for('my_bookings') }}" class="btn">View My Bookings</a>
+            {% else %}
+                <h2 style="color: #dc3545;">Payment Failed</h2>
+                <div style="font-size: 3rem; margin: 20px 0;">❌</div>
+                <p>{{ message }}</p>
+                <p>The booking has been cancelled.</p>
+                <a href="{{ url_for('dashboard') }}" class="btn">Try Again</a>
+            {% endif %}
+            <p style="margin-top: 20px;"><a href="{{ url_for('home') }}">Back to Home</a></p>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p><strong>My Eazy Day</strong></p>
+        <p>📍 Near Canara Bank, New Bus Stand, Kasaragod, 671124</p>
+        <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
+        <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
+    </footer>
+</body>
+</html>

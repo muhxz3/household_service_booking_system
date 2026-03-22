@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Profile - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="backcolor">
+    <nav class="navbar" style="margin-bottom: 0;">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="/dashboard">Home</a>
+            <a href="/my_bookings">My Bookings</a>
+            <a href="{{ url_for('customer_profile') }}">Profile</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="login-box">
+            <h2>Update Profile</h2>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <p style="color: {% if category == 'error' %}red{% else %}green{% endif %}; margin-bottom: 15px; font-weight: bold;">
+                            {{ message }}
+                        </p>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form action="{{ url_for('customer_edit_profile') }}" method="POST">
+                <div class="input-group">
+                    <label for="cust_name">Full Name</label>
+                    <input type="text" id="cust_name" name="cust_name" value="{{ customer.cust_name }}" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" value="{{ customer.email }}" required>
+                </div>
+
+                <div class="input-group">
+                    <label for="phone">Phone Number</label>
+                    <input type="tel" id="phone" name="phone" value="{{ customer.phone }}" required>
+                </div>
+
+                <div class="input-group">
+                    <label for="address">Address</label>
+                    <input type="text" id="address" name="address" value="{{ customer.address }}" required>
+                </div>
+
+                <div class="input-group">
+                    <label for="region">Region</label>
+                    <select id="region" name="region" required>
+                        <option value="North" {% if customer.region == 'North' %}selected{% endif %}>North (Kumbala, Arikkady...)</option>
+                        <option value="South" {% if customer.region == 'South' %}selected{% endif %}>South (Chandragiri, Bekal...)</option>
+                        <option value="East" {% if customer.region == 'East' %}selected{% endif %}>East (Maipady, Madhur...)</option>
+                        <option value="West" {% if customer.region == 'West' %}selected{% endif %}>West (Thalangara Area)</option>
+                    </select>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" value="{{ customer.username }}" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">New Password (Leave blank to keep current)</label>
+                    <input type="password" id="password" name="password" placeholder="********">
+                </div>
+                
+                <button type="submit" class="btn">Save Changes</button>
+            </form>
+            <p style="margin-top: 20px;"><a href="{{ url_for('customer_profile') }}">Cancel</a></p>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p><strong>My Eazy Day</strong></p>
+        <p>📍 Near Canara Bank, New Bus Stand, Kasaragod, 671124</p>
+        <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
+        <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
+    </footer>
+</body>
+</html>
