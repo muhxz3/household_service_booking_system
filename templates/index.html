@@ -13,9 +13,18 @@
         <div class="nav-links">
             <a href="/">Home</a>
             <a href="#services">Services</a>
-            <a href="/register">Register</a>
-            <a href="/login">Login</a>
-            <a href="{{ url_for('worker_register') }}">Work With Us</a>
+            {% if session.loggedin %}
+                {% if session.role == 'customer' %}
+                    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                {% elif session.role == 'worker' %}
+                    <a href="{{ url_for('worker_dashboard') }}">Dashboard</a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Logout</a>
+            {% else %}
+                <a href="/register">Register</a>
+                <a href="/login">Login</a>
+                <a href="{{ url_for('worker_register') }}">Work With Us</a>
+            {% endif %}
         </div>
     </nav>
 
@@ -31,8 +40,11 @@
     <!-- Services Preview -->
     <section class="dashboard-container" id="services">
         <h2 style="text-align:center; margin-bottom: 30px; color: var(--text-dark);">Our Services</h2>
+        
+        <!-- Standard Services -->
         <div class="services-grid">
             {% for service in services %}
+            {% if service.service_type == 'regular' %}
             <div class="service-card">
                 <div class="service-icon">
                     {% if service.category == 'pickup' %}👕
@@ -44,10 +56,42 @@
                 <h3>{{ service.service_name }}</h3>
                 <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
                 <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
-                <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+                {% if session.loggedin %}
+                    <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+                {% else %}
+                    <a href="{{ url_for('login_page') }}" class="btn">Book Now</a>
+                {% endif %}
             </div>
+            {% endif %}
             {% else %}
             <p>Services will be listed here soon.</p>
+            {% endfor %}
+        </div>
+
+        <!-- Premium Services -->
+        <h2 style="text-align:center; margin: 50px 0 30px 0; color: #d35400;">✨ Premium Services</h2>
+        <div class="services-grid premium-grid">
+            {% for service in services %}
+            {% if service.service_type == 'premium' %}
+            <div class="service-card premium-card">
+                <div class="service-icon">
+                    {% if 'Cleaning' in service.service_name %}🧹
+                    {% elif 'Gardening' in service.service_name %}🌱
+                    {% else %}⚡
+                    {% endif %}
+                </div>
+                <h3>{{ service.service_name }}</h3>
+                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
+                <span class="premium-badge">Premium</span>
+                <br><br>
+                <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
+                {% if session.loggedin %}
+                    <a href="/book/{{ service.service_id }}" class="btn btn-premium">Book Premium</a>
+                {% else %}
+                    <a href="{{ url_for('login_page') }}" class="btn btn-premium">Book Premium</a>
+                {% endif %}
+            </div>
+            {% endif %}
             {% endfor %}
         </div>
     </section>

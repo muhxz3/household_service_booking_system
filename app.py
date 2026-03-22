@@ -8,6 +8,7 @@ from config import (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME,
 from flask_mail import Mail, Message
 import random
 import json
+from payment_simulator import PaymentSimulator
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY # Required for session management
@@ -77,7 +78,7 @@ def home():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         # Fetch all services to display on the homepage
-        cursor.execute("SELECT service_id, service_name, category, price FROM service")
+        cursor.execute("SELECT service_id, service_name, category, price, service_type FROM service ORDER BY service_type DESC, service_name ASC")
         services = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -516,7 +517,7 @@ def dashboard():
         conn = get_db_connection()
         # dictionary=True lets us access columns by name (e.g., service['service_name'])
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT service_id, service_name, price, category FROM service")
+        cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service ORDER BY service_type DESC, service_name ASC")
         services = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -637,7 +638,7 @@ def worker_dashboard():
         """, (worker_id,))
         jobs = cursor.fetchall()
 
-    cursor.execute("SELECT service_id, service_name, price, category FROM service")
+    cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service ORDER BY service_type DESC, service_name ASC")
     services = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -647,28 +648,87 @@ def worker_dashboard():
 def worker_assigned_jobs():
     return redirect(url_for('worker_dashboard'))
 
-@app.route('/worker/update_status/<int:booking_id>/<status>')
-def update_booking_status(booking_id, status):
+@app.route('/worker/edit_booking/<int:booking_id>', methods=['GET', 'POST'])
+def worker_edit_booking(booking_id):
     if 'loggedin' not in session or session['role'] != 'worker':
         return redirect(url_for('login_page'))
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Get worker_id associated with the logged-in user
+    # Authorization: Check if this booking belongs to the logged-in worker
     cursor.execute("SELECT worker_id FROM worker WHERE login_id = %s", (session['id'],))
     worker = cursor.fetchone()
+    if not worker:
+        flash("Worker profile not found.", "error")
+        cursor.close()
+        conn.close()
+        return redirect(url_for('worker_dashboard'))
+    
+    worker_id = worker['worker_id']
 
-    if worker and status in ['in_progress', 'completed']: # Workers can start or complete jobs
-        worker_id = worker['worker_id']
-        # Update the booking status only if it belongs to this worker
-        cursor.execute("UPDATE booking SET booking_status = %s WHERE booking_id = %s AND worker_id = %s", 
+    cursor.execute("SELECT * FROM booking WHERE booking_id = %s AND worker_id = %s", (booking_id, worker_id))
+    booking = cursor.fetchone()
+
+    if not booking:
+        flash("Booking not found or you are not authorized to edit it.", "error")
+        cursor.close()
+        conn.close()
+        return redirect(url_for('worker_dashboard'))
+
+    if request.method == 'POST':
+        status = request.form['status']
+        
+        # Logic Fix: If status is already the same, don't update and don't error
+        if booking['booking_status'] == status:
+            flash(f'Status is already {status.title()}.', 'info')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('worker_dashboard'))
+
+        cursor.execute("UPDATE booking SET booking_status = %s WHERE booking_id = %s AND worker_id = %s",
                        (status, booking_id, worker_id))
-        conn.commit()
+
+        if cursor.rowcount > 0:
+            if status == 'completed':
+                cursor.execute("SELECT payment_method FROM payment WHERE booking_id = %s", (booking_id,))
+                payment = cursor.fetchone()
+                if payment and payment['payment_method'] == 'cash':
+                    cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
+                    flash('Job and cash payment marked as completed.', 'info')
+                else:
+                    flash('Job marked as completed.', 'info')
+            elif status == 'cancelled':
+                # Attempt to update payment status, ignore if schema doesn't support it (avoids crash)
+                try:
+                    cursor.execute("UPDATE payment SET payment_status = 'cancelled' WHERE booking_id = %s", (booking_id,))
+                except mysql.connector.Error:
+                    pass # Payment status stays as is if 'cancelled' isn't in ENUM
+                flash(f'Job #{booking_id} has been cancelled.', 'info')
+            else:
+                flash(f'Job #{booking_id} status updated to {status.replace("_", " ")}.', 'info')
+            conn.commit()
+        else:
+            flash('Could not update status.', 'error')
+        
+        cursor.close()
+        conn.close()
+        return redirect(url_for('worker_dashboard'))
+
+    # GET request: Fetch full details for the edit page
+    cursor.execute("""
+        SELECT b.booking_id, b.booking_date, b.booking_status,
+               c.cust_name, s.service_name
+        FROM booking b
+        JOIN customer c ON b.customer_id = c.customer_id
+        JOIN service s ON b.service_id = s.service_id
+        WHERE b.booking_id = %s
+    """, (booking_id,))
+    booking_details = cursor.fetchone()
 
     cursor.close()
     conn.close()
-    return redirect(url_for('worker_dashboard'))
+    return render_template('worker_edit_booking.html', booking=booking_details)
 
 @app.route('/booking/details/<int:booking_id>')
 def booking_details(booking_id):
@@ -743,7 +803,7 @@ def admin_dashboard():
         ORDER BY b.booking_date DESC
     """)
     bookings = cursor.fetchall()
-    cursor.execute("SELECT service_id, service_name, price, category FROM service")
+    cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service")
     services = cursor.fetchall()
 
     # Fetch pending worker registrations
@@ -807,23 +867,13 @@ def booking_form(service_id):
     now = datetime.now()
     service = None
     workers = []
-    delivery_charge = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT service_id, service_name, category FROM service WHERE service_id = %s", (service_id,))
+        cursor.execute("SELECT service_id, service_name, category, service_type FROM service WHERE service_id = %s", (service_id,))
         service = cursor.fetchone()
         
         if service:
-            # If it's a pickup service, get the delivery charge for the user's region
-            if service['category'] == 'pickup':
-                cursor.execute("SELECT region FROM customer WHERE login_id = %s", (session['id'],))
-                customer = cursor.fetchone()
-                if customer:
-                    cursor.execute("SELECT charge FROM delivery_charges WHERE region = %s", (customer['region'],))
-                    charge_record = cursor.fetchone()
-                    if charge_record:
-                        delivery_charge = charge_record['charge']
 
             # Fetch all workers with their ratings irrespective of the skills
             cursor.execute("""
@@ -841,7 +891,7 @@ def booking_form(service_id):
     except Exception as e:
         print(f"Error fetching service details: {e}")
 
-    return render_template('booking_form.html', service=service, workers=workers, delivery_charge=delivery_charge, now=now)
+    return render_template('booking_form.html', service=service, workers=workers, now=now)
 
 @app.route('/book_service', methods=['POST'])
 def book_service():
@@ -851,8 +901,6 @@ def book_service():
     if session.get('role') == 'worker':
         return redirect(url_for('worker_dashboard'))
 
-    booking_date = request.form['booking_date']
-    booking_time = request.form['booking_time']
     service_id = request.form['service_id']
     login_id = session['id']
     
@@ -876,22 +924,31 @@ def book_service():
     customer = cursor.fetchone()
 
     if customer and service:
+        if service.get('service_type') == 'premium':
+            booking_date = request.form['booking_date']
+            booking_time = request.form['booking_time']
+        else:
+            booking_date = datetime.now().date()
+            booking_time = datetime.now().time()
+
         customer_id = customer['customer_id']
-        cursor.execute("INSERT INTO booking (booking_date, booking_time, booking_status, customer_id, service_id, worker_id) VALUES (%s, %s, 'pending', %s, %s, %s)", 
-                       (booking_date, booking_time, customer_id, service_id, worker_id))
+        
+        payment_method = request.form.get('payment_method', 'cash')
+        # Schema only supports pending/completed/cancelled
+        initial_status = 'pending'
+
+        cursor.execute("INSERT INTO booking (booking_date, booking_time, booking_status, customer_id, service_id, worker_id) VALUES (%s, %s, %s, %s, %s, %s)", 
+                       (booking_date, booking_time, initial_status, customer_id, service_id, worker_id))
         booking_id = cursor.lastrowid
 
         # Handle Payment Entry
-        payment_method = request.form.get('payment_method', 'cash')
-        amount = service['price']
+        amount = float(service['price'])
         
         # Add delivery charge if applicable
         delivery_charge = 0
         if service['category'] == 'pickup':
-            cursor.execute("SELECT charge FROM delivery_charges WHERE region = %s", (customer['region'],))
-            charge_record = cursor.fetchone()
-            if charge_record:
-                delivery_charge = charge_record['charge']
+            pickup_distance = float(request.form.get('pickup_distance', 0))
+            delivery_charge += max(0, (pickup_distance - 5) * 20)
         
         total_amount = amount + delivery_charge
 
@@ -940,7 +997,85 @@ def payment_page(booking_id):
     cursor.close()
     conn.close()
     
-    return render_template('payment.html', booking=booking)
+    # Redirect to payment simulation instead of showing payment.html
+    return redirect(url_for('payment_simulation', booking_id=booking_id))
+
+@app.route('/payment_simulation/<int:booking_id>')
+def payment_simulation(booking_id):
+    if 'loggedin' not in session:
+        return redirect(url_for('login_page'))
+        
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Fetch booking details for the simulation page
+    cursor.execute("""
+        SELECT b.booking_id, s.service_name, p.amount
+        FROM booking b
+        JOIN service s ON b.service_id = s.service_id
+        JOIN payment p ON b.booking_id = p.booking_id
+        WHERE b.booking_id = %s
+    """, (booking_id,))
+    booking = cursor.fetchone()
+    
+    cursor.close()
+    conn.close()
+    
+    if not booking:
+        flash('Booking not found', 'error')
+        return redirect(url_for('my_bookings'))
+    
+    return render_template('payment_simulation.html', 
+                         booking_id=booking['booking_id'],
+                         service_name=booking['service_name'],
+                         amount=booking['amount'])
+
+@app.route('/process_payment_simulation', methods=['POST'])
+def process_payment_simulation():
+    if 'loggedin' not in session:
+        return redirect(url_for('login_page'))
+        
+    booking_id = int(request.form['booking_id'])
+    scenario = request.form['scenario']
+    amount = float(request.form['amount'])
+    
+    # Use the payment simulator
+    result = PaymentSimulator.simulate_payment_scenario(scenario, booking_id, amount)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if result['status'] == 'completed':
+            # Payment successful
+            cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
+            # Schema limitation: booking_status stays 'pending' until worker completes it
+            conn.commit()
+            flash(result['message'], 'success')
+            
+        elif result['status'] == 'failed':
+            # Payment failed - Map to 'cancelled' for schema compatibility
+            cursor.execute("UPDATE payment SET payment_status = 'cancelled' WHERE booking_id = %s", (booking_id,))
+            conn.commit()
+            flash(result['message'], 'error')
+            
+        elif result['status'] == 'processing':
+            # Payment processing - stays in pending state (Map 'processing' to 'pending')
+            cursor.execute("UPDATE payment SET payment_status = 'pending' WHERE booking_id = %s", (booking_id,))
+            conn.commit()
+            flash(result['message'], 'info')
+            
+        else:
+            flash('Invalid payment scenario', 'error')
+            
+    except Exception as e:
+        print(f"Payment simulation error: {e}")
+        flash('An error occurred during payment processing.', 'error')
+    finally:
+        cursor.close()
+        conn.close()
+    
+    return redirect(url_for('my_bookings'))
 
 @app.route('/my_bookings')
 def my_bookings():
@@ -960,10 +1095,14 @@ def my_bookings():
     if customer:
         customer_id = customer['customer_id']
         cursor.execute("""
-            SELECT b.booking_id, s.service_name, b.booking_date, b.booking_time, b.booking_status, w.worker_name 
+            SELECT b.booking_id, s.service_name, b.booking_date, b.booking_time, b.booking_status, w.worker_name,
+                   p.payment_status, p.payment_method, p.amount,
+                   f.rating
             FROM booking b
             JOIN service s ON b.service_id = s.service_id
             LEFT JOIN worker w ON b.worker_id = w.worker_id
+            LEFT JOIN payment p ON b.booking_id = p.booking_id
+            LEFT JOIN feedback f ON b.booking_id = f.booking_id
             WHERE b.customer_id = %s
             ORDER BY b.booking_date DESC
         """, (customer_id,))
@@ -977,24 +1116,34 @@ def my_bookings():
 def feedback(booking_id):
     if 'loggedin' not in session:
         return redirect(url_for('login_page'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Check if feedback already exists for this booking
+    cursor.execute("SELECT feedback_id FROM feedback WHERE booking_id = %s", (booking_id,))
+    existing_feedback = cursor.fetchone()
+
+    if existing_feedback:
+        flash('You have already submitted feedback for this booking.', 'info')
+        cursor.close()
+        conn.close()
+        return redirect(url_for('my_bookings'))
         
     if request.method == 'POST':
         rating = request.form['rating']
         comments = request.form['comments']
         
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("INSERT INTO feedback (booking_id, rating, comments) VALUES (%s, %s, %s)", 
-                           (booking_id, rating, comments))
-            conn.commit()
-        except Exception as e:
-            print(f"Error submitting feedback: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+        cursor.execute("INSERT INTO feedback (booking_id, rating, comments) VALUES (%s, %s, %s)", 
+                        (booking_id, rating, comments))
+        conn.commit()
+        flash('Thank you for your feedback!', 'success')
+        cursor.close()
+        conn.close()
         return redirect(url_for('my_bookings'))
         
+    cursor.close()
+    conn.close()
     return render_template('feedback.html', booking_id=booking_id)
 
 @app.route('/admin/add_worker', methods=['GET', 'POST'])
@@ -1161,13 +1310,14 @@ def setup():
         
         # --- Idempotent Service Setup ---
         all_services = {
-            'Laundry & Ironing': ('pickup', 250.00),
-            'Emergency Electric Works': ('onsite', 900.00),
-            'Emergency Plumbing Works': ('onsite', 900.00),
-            'Full House Cleaning': ('onsite', 1500.00),
-            'Gardening': ('onsite', 800.00),
-            'Plumbing Repair': ('onsite', 450.00),
-            'Electrical Maintenance': ('onsite', 450.00)
+            # Name: (Category, Price, Service_Type)
+            'Laundry & Ironing': ('pickup', 250.00, 'regular'),
+            'Plumbing Repair': ('onsite', 450.00, 'regular'),
+            'Electrical Maintenance': ('onsite', 450.00, 'regular'),
+            'Emergency Electric Works': ('onsite', 900.00, 'premium'),
+            'Emergency Plumbing Works': ('onsite', 900.00, 'premium'),
+            'Full House Cleaning': ('onsite', 1500.00, 'premium'),
+            'Gardening': ('onsite', 800.00, 'premium')
         }
 
         cursor.execute("SELECT service_name FROM service")
@@ -1176,23 +1326,14 @@ def setup():
         new_services_to_add = []
         for name, details in all_services.items():
             if name not in existing_services:
-                new_services_to_add.append((name, details[0], details[1]))
+                new_services_to_add.append((name, details[0], details[1], details[2]))
 
         if new_services_to_add:
-            cursor.executemany("INSERT INTO service (service_name, category, price) VALUES (%s, %s, %s)", new_services_to_add)
+            cursor.executemany("INSERT INTO service (service_name, category, price, service_type) VALUES (%s, %s, %s, %s)", new_services_to_add)
             msg = f"{len(new_services_to_add)} new services added successfully! "
         else:
             msg = "All services already exist. "
 
-        # Check and add delivery charges
-        cursor.execute("SELECT COUNT(*) FROM delivery_charges")
-        # The cursor is a dictionary cursor, so we need to access the count differently
-        if cursor.fetchone()['COUNT(*)'] == 0:
-            charges = [('North', 50.00), ('South', 60.00), ('East', 40.00), ('West', 45.00)]
-            cursor.executemany("INSERT INTO delivery_charges (region, charge) VALUES (%s, %s)", charges)
-            msg += "Delivery charges added. "
-        else:
-            msg += "Delivery charges already exist. "
 
         conn.commit()
         cursor.close()

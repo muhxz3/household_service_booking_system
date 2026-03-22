@@ -22,6 +22,20 @@
             <p>Here are the jobs assigned to you.</p>
         </div>
 
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    {% if category == 'error' %}
+                    <div class="alert-error" role="alert">
+                    {% else %}
+                    <div class="alert-info" role="alert">
+                    {% endif %}
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
         <table class="data-table">
             <thead>
                 <tr>
@@ -40,18 +54,15 @@
                     <td>{{ job.cust_name }}</td>
                     <td>{{ job.service_name }}</td>
                     <td>{{ job.booking_date }} at {{ job.booking_time }}</td>
-                    <td>{{ job.booking_status }}</td>
+                    <td>
+                        <span class="status-badge status-{{ job.booking_status.lower() }}">
+                            {{ job.booking_status }}
+                        </span>
+                    </td>
                     <td>
                         <a href="{{ url_for('booking_details', booking_id=job.booking_id) }}">View Details</a>
-                        {% if job.booking_status == 'assigned' %}
-                        <br>
-                        <a href="{{ url_for('update_booking_status', booking_id=job.booking_id, status='in_progress') }}" 
-                           style="color: orange; font-weight: bold;">Start Job</a>
-                        {% elif job.booking_status == 'in_progress' %}
-                        <br>
-                        <a href="{{ url_for('update_booking_status', booking_id=job.booking_id, status='completed') }}"
-                           style="color: green; font-weight: bold;"
-                           onclick="return confirm('Are you sure you want to mark this job as completed?')">Complete Job</a>
+                        {% if job.booking_status not in ['completed', 'cancelled'] %}
+                            <a href="{{ url_for('worker_edit_booking', booking_id=job.booking_id) }}" style="margin-left: 10px; color: blue; font-weight: bold;">Edit</a>
                         {% endif %}
                     </td>
                 </tr>

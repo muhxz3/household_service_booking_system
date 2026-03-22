@@ -11,7 +11,8 @@ create table service
 (service_id int primary key auto_increment,
 service_name varchar(50) not null,
 category enum('pickup', 'onsite') not null,
-price decimal(10, 2) not null)auto_increment=1000;
+price decimal(10, 2) not null,
+service_type enum('regular','premium'))auto_increment=1000;
 
 create table worker
 (worker_id int primary key auto_increment,
@@ -26,7 +27,7 @@ create table booking
 (booking_id int primary key auto_increment,
 booking_date date not null,
 booking_time time not null,
-booking_status enum('pending', 'assigned', 'in_progress', 'completed', 'cancelled') not null,
+booking_status enum('pending','completed', 'cancelled') not null,
 customer_id int,
 service_id int,
 worker_id int,

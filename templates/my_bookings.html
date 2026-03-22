@@ -30,6 +30,8 @@
                     <th>Date & Time</th>
                     <th>Worker Assigned</th>
                     <th>Status</th>
+                    <th>Payment</th>
+                    <th>Amount</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -40,10 +42,34 @@
                     <td>{{ booking.service_name }}</td>
                     <td>{{ booking.booking_date }} at {{ booking.booking_time }}</td>
                     <td>{{ booking.worker_name if booking.worker_name else 'Not Assigned' }}</td>
-                    <td>{{ booking.booking_status }}</td>
+                    <td>
+                        <span class="status-badge status-{{ booking.booking_status.lower() }}">
+                            {{ booking.booking_status }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if booking.payment_status %}
+                            <span class="payment-badge payment-{{ booking.payment_status.lower() }}">
+                                {{ booking.payment_method|title }} - {{ booking.payment_status }}
+                            </span>
+                        {% else %}
+                            <span class="payment-badge payment-pending">Pending</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if booking.amount %}
+                            ₹{{ "%.2f"|format(booking.amount) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                     <td>
                         {% if booking.booking_status == 'completed' %}
-                        <a href="{{ url_for('feedback', booking_id=booking.booking_id) }}" style="color: var(--primary-color); font-weight: bold; text-decoration: underline;">Rate Service</a>
+                            {% if booking.rating %}
+                                <span style="color: #f39c12; font-weight: bold;">★ {{ booking.rating }}</span>
+                            {% else %}
+                                <a href="{{ url_for('feedback', booking_id=booking.booking_id) }}" style="color: var(--primary-color); font-weight: bold; text-decoration: underline;">Rate Service</a>
+                            {% endif %}
                         {% endif %}
                     </td>
                 </tr>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update Job Status - Worker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h2>Update Job #{{ booking.booking_id }}</h2>
+            
+            <div style="text-align: left; margin-bottom: 20px; color: #555;">
+                <p><strong>Customer:</strong> {{ booking.cust_name }}</p>
+                <p><strong>Service:</strong> {{ booking.service_name }}</p>
+                <p><strong>Date:</strong> {{ booking.booking_date }}</p>
+            </div>
+
+            <form action="{{ url_for('worker_edit_booking', booking_id=booking.booking_id) }}" method="POST">
+                
+                <div class="input-group">
+                    <label for="status">Booking Status</label>
+                    <select id="status" name="status">
+                        <option value="pending" {% if booking.booking_status == 'pending' or booking.booking_status not in ['completed', 'cancelled'] %}selected{% endif %}>Pending</option>
+                        <option value="completed" {% if booking.booking_status == 'completed' %}selected{% endif %}>Completed</option>
+                        <option value="cancelled" {% if booking.booking_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn">Update Status</button>
+            </form>
+            
+            <p><a href="{{ url_for('worker_dashboard') }}">Cancel</a></p>
+        </div>
+    </div>
+</body>
+</html>

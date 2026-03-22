@@ -23,6 +23,20 @@
                 <p style="font-size: 1.2rem; color: var(--primary-color); font-weight: bold;">Price: ₹{{ "%.2f"|format(service.price) }}</p>
                 <p><strong>Category:</strong> {{ service.category|capitalize }}</p>
                 <p style="margin: 20px 0; color: var(--text-light);">This service is provided by our expert professionals. We ensure high quality and satisfaction.</p>
+                
+                {% if service.category == 'pickup' %}
+                <div class="alert-info" style="text-align: left; margin-bottom: 20px;">
+                    <strong>Pickup & Delivery Schedule:</strong>
+                    <ul style="margin-top: 10px; padding-left: 20px;">
+                        <li><strong>North (Mon & Fri):</strong> Kumbala, Arikkady, Uppala</li>
+                        <li><strong>South (Tue & Sat):</strong> Chandragiri, Bekal, Nellikunnu</li>
+                        <li><strong>East (Wed):</strong> Maipady, Madhur, Patla</li>
+                        <li><strong>West (Thu):</strong> Thalangara Area</li>
+                    </ul>
+                    <p style="margin-top: 10px; font-size: 0.9em;">* Additional delivery charges apply based on your location.</p>
+                </div>
+                {% endif %}
+
                 {% if session.role != 'worker' %}
                 <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
                 {% endif %}

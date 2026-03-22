@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Simulation - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('my_bookings') }}">My Bookings</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="payment-box">
+            <form action="/process_payment_simulation" method="POST">
+                <input type="hidden" name="booking_id" value="{{ booking_id }}">
+                <input type="hidden" name="amount" value="{{ amount }}">
+
+                <div class="booking-summary">
+                    <h3>Payment Amount</h3>
+                    <div class="amount-display">₹{{ "%.2f"|format(amount) }}</div>
+                </div>
+
+                <div class="simulation-actions" style="margin-top: 30px;">
+                    <button type="submit" name="scenario" value="success" class="btn-sim btn-success">Pay Now (Success)</button>
+                    <button type="submit" name="scenario" value="failure" class="btn-sim btn-failure">Decline Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
