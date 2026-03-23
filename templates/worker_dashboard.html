@@ -49,6 +49,7 @@
                     <th>Service</th>
                     <th>Date & Time</th>
                     <th>Status</th>
+                    <th>Payment</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -64,6 +65,16 @@
                         <span class="status-badge status-{{ job.booking_status.lower() }}">
                             {{ job.booking_status }}
                         </span>
+                    </td>
+                    <td>
+                        {% if job.payment_status == 'completed' %}
+                            <span class="payment-badge payment-completed">Paid</span>
+                        {% else %}
+                            <span class="payment-badge payment-pending">Unpaid</span>
+                        {% endif %}
+                        {% if job.amount %}
+                            <div style="font-size: 0.9em; margin-top: 5px;">₹{{ "%.2f"|format(job.amount) }}</div>
+                        {% endif %}
                     </td>
                     <td>
                         <a href="{{ url_for('booking_details', booking_id=job.booking_id) }}">View Details</a>
@@ -86,6 +97,7 @@
                     <th>Service</th>
                     <th>Date & Time</th>
                     <th>Status</th>
+                    <th>Payment</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -101,6 +113,16 @@
                         <span class="status-badge status-{{ job.booking_status.lower() }}">
                             {{ job.booking_status }}
                         </span>
+                    </td>
+                    <td>
+                        {% if job.payment_status == 'completed' %}
+                            <span class="payment-badge payment-completed">Paid</span>
+                        {% else %}
+                            <span class="payment-badge payment-pending">Unpaid</span>
+                        {% endif %}
+                        {% if job.amount %}
+                            <div style="font-size: 0.9em; margin-top: 5px;">₹{{ "%.2f"|format(job.amount) }}</div>
+                        {% endif %}
                     </td>
                     <td>
                         <a href="{{ url_for('booking_details', booking_id=job.booking_id) }}">View Details</a>

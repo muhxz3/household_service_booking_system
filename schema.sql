@@ -21,6 +21,7 @@ phone varchar(15) not null unique,
 email varchar(50) not null unique,
 address varchar(255) not null,
 skills varchar(255) not null,
+rating decimal(3, 2) default 0.00,
 login_id int unique)auto_increment=10000;
 
 create table booking

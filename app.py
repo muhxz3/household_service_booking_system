@@ -646,25 +646,21 @@ def worker_dashboard():
         worker_id = worker['worker_id']
         # Fetch jobs assigned to this worker
         cursor.execute("""
-            SELECT b.booking_id, c.cust_name, s.service_name, s.service_type, b.booking_date, b.booking_time, b.booking_status
+            SELECT b.booking_id, c.cust_name, s.service_name, s.service_type, b.booking_date, b.booking_time, b.booking_status, p.payment_status, p.amount
             FROM booking b
             JOIN customer c ON b.customer_id = c.customer_id
             JOIN service s ON b.service_id = s.service_id
+            LEFT JOIN payment p ON b.booking_id = p.booking_id
             WHERE b.worker_id = %s
             ORDER BY b.booking_date ASC
         """, (worker_id,))
         jobs = cursor.fetchall()
         
-        # Calculate average rating
-        cursor.execute("""
-            SELECT AVG(f.rating) as avg_rating
-            FROM feedback f
-            JOIN booking b ON f.booking_id = b.booking_id
-            WHERE b.worker_id = %s
-        """, (worker_id,))
+        # Fetch rating from worker table
+        cursor.execute("SELECT rating FROM worker WHERE worker_id = %s", (worker_id,))
         result = cursor.fetchone()
-        if result and result['avg_rating']:
-            worker_rating = result['avg_rating']
+        if result and result['rating']:
+            worker_rating = result['rating']
 
     cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service ORDER BY service_type DESC, service_name ASC")
     services = cursor.fetchall()
@@ -867,6 +863,22 @@ def edit_booking(booking_id):
         cursor.execute("UPDATE booking SET worker_id = %s, booking_status = %s WHERE booking_id = %s", 
                        (worker_id, status, booking_id))
         conn.commit()
+
+        # Send Notification to Worker if assigned
+        if worker_id:
+            cursor.execute("SELECT email, worker_name FROM worker WHERE worker_id = %s", (worker_id,))
+            worker_data = cursor.fetchone()
+            
+            cursor.execute("SELECT s.service_name, b.booking_date, b.booking_time FROM booking b JOIN service s ON b.service_id = s.service_id WHERE b.booking_id = %s", (booking_id,))
+            job_details = cursor.fetchone()
+
+            if worker_data and job_details:
+                send_notification_email(
+                    worker_data['email'],
+                    f"Job Assignment Update - Booking #{booking_id}",
+                    f"Hello {worker_data['worker_name']},\n\nYou have been assigned to booking #{booking_id}.\nService: {job_details['service_name']}\nDate: {job_details['booking_date']}\nTime: {job_details['booking_time']}\n\nPlease check your dashboard for details."
+                )
+
         cursor.close()
         conn.close()
         return redirect(url_for('admin_dashboard'))
@@ -883,7 +895,7 @@ def edit_booking(booking_id):
     booking = cursor.fetchone()
 
     # Fetch all workers for the dropdown
-    cursor.execute("SELECT worker_id, worker_name FROM worker")
+    cursor.execute("SELECT worker_id, worker_name, rating FROM worker")
     workers = cursor.fetchall()
 
     cursor.close()
@@ -930,14 +942,7 @@ def booking_form(service_id):
         if service:
 
             # Fetch all workers with their ratings irrespective of the skills
-            cursor.execute("""
-                SELECT w.worker_id, w.worker_name, AVG(f.rating) as avg_rating
-                FROM worker w
-                LEFT JOIN booking b ON w.worker_id = b.worker_id
-                LEFT JOIN feedback f ON b.booking_id = f.booking_id
-                GROUP BY w.worker_id
-                ORDER BY avg_rating DESC
-            """)
+            cursor.execute("SELECT worker_id, worker_name, rating as avg_rating FROM worker ORDER BY rating DESC")
             workers = cursor.fetchall()
 
         cursor.close()
@@ -1015,6 +1020,17 @@ def book_service():
         # Send Booking Confirmation Email (for Cash payments or initial booking state)
         if customer.get('email'):
             send_notification_email(customer['email'], f"Booking Confirmed - #{booking_id}", f"Hello {customer['cust_name']},\n\nYour booking for {service['service_name']} has been placed successfully.\nBooking ID: {booking_id}\nDate: {booking_date}\nTime: {booking_time}\n\nThank you for choosing My Eazy Day.")
+
+        # Send Notification to Worker
+        if worker_id:
+            cursor.execute("SELECT email, worker_name FROM worker WHERE worker_id = %s", (worker_id,))
+            worker_data = cursor.fetchone()
+            if worker_data:
+                 send_notification_email(
+                    worker_data['email'],
+                    f"New Job Assigned - Booking #{booking_id}",
+                    f"Hello {worker_data['worker_name']},\n\nYou have been assigned a new job.\nService: {service['service_name']}\nDate: {booking_date}\nTime: {booking_time}\n\nPlease check your dashboard for details."
+                )
 
         # If online payment is selected, redirect to payment page
         if payment_method == 'online':
@@ -1391,14 +1407,32 @@ def feedback(booking_id):
         
         cursor.execute("INSERT INTO feedback (booking_id, rating, comments) VALUES (%s, %s, %s)", 
                         (booking_id, rating, comments))
-        conn.commit()
         
-        # Notify Worker of new feedback
-        cursor.execute("SELECT w.email, w.worker_name FROM booking b JOIN worker w ON b.worker_id = w.worker_id WHERE b.booking_id = %s", (booking_id,))
+        # Update Worker Rating and Notify
+        cursor.execute("""
+            SELECT w.worker_id, w.email, w.worker_name 
+            FROM booking b 
+            JOIN worker w ON b.worker_id = w.worker_id 
+            WHERE b.booking_id = %s
+        """, (booking_id,))
         worker_details = cursor.fetchone()
+
         if worker_details:
+            worker_id = worker_details['worker_id']
+            cursor.execute("""
+                SELECT AVG(f.rating) as avg_rating 
+                FROM feedback f 
+                JOIN booking b ON f.booking_id = b.booking_id 
+                WHERE b.worker_id = %s
+            """, (worker_id,))
+            avg_result = cursor.fetchone()
+            new_rating = float(avg_result['avg_rating']) if avg_result and avg_result['avg_rating'] else 0.0
+            
+            cursor.execute("UPDATE worker SET rating = %s WHERE worker_id = %s", (new_rating, worker_id))
+            
             send_notification_email(worker_details['email'], f"New Feedback Received - Booking #{booking_id}", f"Hello {worker_details['worker_name']},\n\nYou have received a new rating of {rating}/5 for booking #{booking_id}.\n\nComment: {comments}")
 
+        conn.commit()
         cursor.close()
         conn.close()
         return redirect(url_for('my_bookings'))
