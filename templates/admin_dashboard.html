@@ -26,6 +26,15 @@
                 <p>View, add, or remove workers from the system.</p>
                 <a href="/admin/manage_workers" class="btn">Go to Workers</a>
             </div>
+
+            {% if best_worker %}
+            <div class="admin-card" style="border-left: 5px solid #f39c12;">
+                <h3>🏆 Best Performer</h3>
+                <p style="font-size: 1.2em; margin-bottom: 5px;"><strong>{{ best_worker.worker_name }}</strong></p>
+                <p><strong>Rating:</strong> <span style="color: #f39c12;">★</span> {{ best_worker.rating }} / 5.0</p>
+                <p><strong>Email:</strong> {{ best_worker.email }}</p>
+            </div>
+            {% endif %}
         </div>
 
         {% if pending_workers %}

@@ -178,6 +178,10 @@ def reset_password():
         otp = request.form['otp']
         new_password = request.form['new_password']
 
+        if len(new_password) < 8:
+            flash('Password must be at least 8 characters long.', 'error')
+            return redirect(url_for('reset_password'))
+
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
@@ -298,6 +302,10 @@ def register_page():
         username = request.form['username']
         password = request.form['password']
 
+        if len(password) < 8:
+            flash('Password must be at least 8 characters long.', 'error')
+            return redirect(url_for('register_page'))
+
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
@@ -379,9 +387,9 @@ def verify_email():
             elif pending_user['role'] == 'worker':
                 # Move worker to pending table for admin approval
                 cursor.execute("""
-                    INSERT INTO worker_pending (worker_name, phone, email, address, skills, username, password)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (user_data['worker_name'], user_data['phone'], user_data['email'], user_data['address'], user_data['skills'], user_data['username'], user_data['password']))
+                    INSERT INTO worker_pending (worker_name, phone, email, address, skills, username, password, is_24_7)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (user_data['worker_name'], user_data['phone'], user_data['email'], user_data['address'], user_data['skills'], user_data['username'], user_data['password'], user_data.get('is_24_7', 0)))
 
             # Clean up
             cursor.execute("DELETE FROM pending_registrations WHERE email = %s", (email,))
@@ -463,6 +471,11 @@ def worker_register():
         skills = request.form['skills']
         username = request.form['username']
         password = request.form['password']
+        is_24_7 = 1 if 'is_24_7' in request.form else 0
+
+        if len(password) < 8:
+            flash('Password must be at least 8 characters long.', 'error')
+            return redirect(url_for('worker_register'))
 
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -499,7 +512,7 @@ def worker_register():
         user_data = {
             'worker_name': worker_name, 'phone': phone, 'email': email, 
             'address': address, 'skills': skills, 'username': username, 
-            'password': password
+            'password': password, 'is_24_7': is_24_7
         }
         
         expires_at = datetime.now() + timedelta(minutes=10)
@@ -840,9 +853,13 @@ def admin_dashboard():
     cursor.execute("SELECT * FROM worker_pending ORDER BY registration_date ASC")
     pending_workers = cursor.fetchall()
 
+    # Fetch best performing worker
+    cursor.execute("SELECT * FROM worker ORDER BY rating DESC LIMIT 1")
+    best_worker = cursor.fetchone()
+
     cursor.close()
     conn.close()
-    return render_template('admin_dashboard.html', bookings=bookings, services=services, pending_workers=pending_workers)
+    return render_template('admin_dashboard.html', bookings=bookings, services=services, pending_workers=pending_workers, best_worker=best_worker)
 
 @app.route('/admin/edit_booking/<int:booking_id>', methods=['GET', 'POST'])
 def edit_booking(booking_id):
@@ -854,8 +871,7 @@ def edit_booking(booking_id):
 
     if request.method == 'POST':
         worker_id = request.form['worker_id']
-        status = request.form['status']
-        
+        status = request.form['status'].strip()
         # Handle "None" selection for worker
         if worker_id == 'none':
             worker_id = None
@@ -864,8 +880,19 @@ def edit_booking(booking_id):
                        (worker_id, status, booking_id))
         conn.commit()
 
+        # Send Notification to Customer if status is completed
+        if status == 'completed':
+            cursor.execute("SELECT c.email, c.cust_name, s.service_name FROM booking b JOIN customer c ON b.customer_id = c.customer_id JOIN service s ON b.service_id = s.service_id WHERE b.booking_id = %s", (booking_id,))
+            details = cursor.fetchone()
+            if details:
+                send_notification_email(
+                    details['email'],
+                    f"Service Completed - Booking #{booking_id}",
+                    f"Hello {details['cust_name']},\n\nYour service '{details['service_name']}' has been marked as completed by the admin.\n\nWe hope you are satisfied with our work. Please log in to your dashboard to provide feedback.\n\nThank you!"
+                )
+
         # Send Notification to Worker if assigned
-        if worker_id:
+        if worker_id and status != 'completed':
             cursor.execute("SELECT email, worker_name FROM worker WHERE worker_id = %s", (worker_id,))
             worker_data = cursor.fetchone()
             
@@ -941,9 +968,28 @@ def booking_form(service_id):
         
         if service:
 
-            # Fetch all workers with their ratings irrespective of the skills
-            cursor.execute("SELECT worker_id, worker_name, rating as avg_rating FROM worker ORDER BY rating DESC")
+            # Fetch all workers including 24/7 status
+            cursor.execute("SELECT worker_id, worker_name, rating as avg_rating, is_24_7 FROM worker ORDER BY rating DESC")
             workers = cursor.fetchall()
+            
+            # Check workload availability
+            cursor.execute("""
+                SELECT b.worker_id, COUNT(*) as total, 
+                       SUM(CASE WHEN s.service_type = 'premium' THEN 1 ELSE 0 END) as premium_count
+                FROM booking b 
+                JOIN service s ON b.service_id = s.service_id
+                WHERE b.booking_status = 'pending'
+                GROUP BY b.worker_id
+            """)
+            workloads = {row['worker_id']: row for row in cursor.fetchall()}
+
+            for worker in workers:
+                load = workloads.get(worker['worker_id'], {'total': 0, 'premium_count': 0})
+                current_total = load['total']
+                current_premium = load['premium_count'] if load['premium_count'] else 0
+                
+                worker['is_available'] = current_total < 4 and not (service['service_type'] == 'premium' and current_premium >= 2)
+                worker['status_msg'] = 'High Workload' if current_total >= 4 else ('Premium Limit Reached' if not worker['is_available'] else '')
 
         cursor.close()
         conn.close()
@@ -965,43 +1011,124 @@ def book_service():
     
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
+    
+    # 1. Fetch Service Details (Moved up to check category/type for worker assignment)
+    cursor.execute("SELECT * FROM service WHERE service_id = %s", (service_id,))
+    service = cursor.fetchone()
+
+    if not service:
+        cursor.close()
+        conn.close()
+        flash('Service not found.', 'error')
+        return redirect(url_for('home'))
+
+    # Check Urgency Mode (Validated against service type)
+    is_urgent = False
+    urgency_mode = request.form.get('urgency_mode')
+    if urgency_mode == '1' and service.get('service_type') == 'premium':
+        is_urgent = True
+        
+    urgency_multiplier = 1.5 if is_urgent else 1.0
 
     # Get the selected worker_id (if any)
     worker_id = request.form.get('worker_id')
-    if worker_id == 'none' or not worker_id:
-        # Randomly assign a worker if none selected
-        cursor.execute("SELECT worker_id FROM worker ORDER BY RAND() LIMIT 1")
-        worker_row = cursor.fetchone()
-        worker_id = worker_row['worker_id'] if worker_row else None
+    
+    # Override for Urgency Mode: Force random assignment
+    if is_urgent:
+        worker_id = 'none'
+    
+    # 1.5. Validate Specific Worker Availability (Re-check workload on submission)
+    if worker_id and worker_id != 'none':
+        cursor.execute("""
+            SELECT COUNT(*) as total, 
+                   SUM(CASE WHEN s.service_type = 'premium' THEN 1 ELSE 0 END) as premium_count
+            FROM booking b 
+            JOIN service s ON b.service_id = s.service_id
+            WHERE b.worker_id = %s AND b.booking_status = 'pending'
+        """, (worker_id,))
+        stats = cursor.fetchone()
+        
+        current_total = stats['total']
+        current_premium = stats['premium_count'] if stats['premium_count'] else 0
+        
+        if current_total >= 4 or (service['service_type'] == 'premium' and current_premium >= 2):
+            flash('The selected worker has just reached their workload limit. Please choose another or select "No Preference".', 'error')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('booking_form', service_id=service_id))
 
-    # 1. Fetch Service Details (to check category and price)
-    cursor.execute("SELECT * FROM service WHERE service_id = %s", (service_id,))
-    service = cursor.fetchone()
+    if worker_id == 'none' or not worker_id:
+        # Randomly assign a worker who is NOT overloaded
+        query = """
+            SELECT w.worker_id, w.is_24_7, COUNT(b.booking_id) as total,
+                   SUM(CASE WHEN s.service_type = 'premium' AND b.booking_status = 'pending' THEN 1 ELSE 0 END) as premium_count
+            FROM worker w
+            LEFT JOIN booking b ON w.worker_id = b.worker_id AND b.booking_status = 'pending'
+            LEFT JOIN service s ON b.service_id = s.service_id
+            WHERE 1=1
+        """
+        if is_urgent:
+            query += " AND w.is_24_7 = 1 "
+            
+        query += " GROUP BY w.worker_id"
+        cursor.execute(query)
+        all_stats = cursor.fetchall()
+        
+        # Filter available workers based on constraints
+        candidates = []
+        for stat in all_stats:
+            p_count = stat['premium_count'] if stat['premium_count'] else 0
+            if stat['total'] < 4:
+                if service['service_type'] != 'premium' or p_count < 2:
+                    candidates.append(stat['worker_id'])
+        
+        if candidates:
+            worker_id = random.choice(candidates)
+        else:
+            msg = 'No 24/7 workers are currently available due to high demand.' if is_urgent else 'All workers are currently fully booked. Please try again later.'
+            flash(msg, 'error')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('booking_form', service_id=service_id))
 
     # 2. Fetch Customer Details
     cursor.execute("SELECT customer_id, region, email, cust_name FROM customer WHERE login_id = %s", (login_id,))
     customer = cursor.fetchone()
 
     if customer and service:
-        if service.get('service_type') == 'premium':
-            booking_date = request.form['booking_date']
-            booking_time = request.form['booking_time']
+        if is_urgent:
+            booking_date = datetime.now().date()
+            booking_time = datetime.now().replace(microsecond=0).time()
+        elif service.get('service_type') == 'premium':
+            booking_date = request.form.get('booking_date')
+            booking_time = request.form.get('booking_time')
+
+            if not booking_date or not booking_time:
+                flash('Please select a valid date and time for premium services.', 'error')
+                cursor.close()
+                conn.close()
+                return redirect(url_for('booking_form', service_id=service_id))
         else:
             booking_date = datetime.now().date()
-            booking_time = datetime.now().time()
+            booking_time = datetime.now().replace(microsecond=0).time()
 
         customer_id = customer['customer_id']
         
-        payment_method = request.form.get('payment_method', 'cash')
         # Schema only supports pending/completed/cancelled
         initial_status = 'pending'
+        
+        # Determine payment method based on urgency
+        if is_urgent:
+            payment_method = 'online'
+        else:
+            payment_method = request.form.get('payment_method', 'cash')
 
         cursor.execute("INSERT INTO booking (booking_date, booking_time, booking_status, customer_id, service_id, worker_id) VALUES (%s, %s, %s, %s, %s, %s)", 
                        (booking_date, booking_time, initial_status, customer_id, service_id, worker_id))
         booking_id = cursor.lastrowid
 
         # Handle Payment Entry
-        amount = float(service['price'])
+        amount = float(service['price']) * urgency_multiplier
         
         # Add delivery charge if applicable
         delivery_charge = 0
@@ -1241,6 +1368,10 @@ def customer_edit_profile():
         username = request.form['username']
         new_password = request.form['password']
 
+        if new_password and len(new_password) < 8:
+            flash('Password must be at least 8 characters long.', 'error')
+            return redirect(url_for('customer_edit_profile'))
+
         # Check for uniqueness conflicts (excluding current user)
         cursor.execute("SELECT customer_id FROM customer WHERE phone = %s AND login_id != %s", (phone, login_id))
         if cursor.fetchone():
@@ -1454,6 +1585,11 @@ def add_worker():
         skills = request.form['skills']
         username = request.form['username']
         password = request.form['password']
+        is_24_7 = 1 if 'is_24_7' in request.form else 0
+
+        if len(password) < 8:
+            flash('Password must be at least 8 characters long.', 'error')
+            return redirect(url_for('add_worker'))
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1462,9 +1598,9 @@ def add_worker():
         cursor.execute("INSERT INTO login (username, password, role) VALUES (%s, %s, 'worker')", (username, password))
         login_id = cursor.lastrowid
 
-        # 2. Create Worker
-        cursor.execute("INSERT INTO worker (worker_name, phone, email, address, skills, login_id) VALUES (%s, %s, %s, %s, %s, %s)", 
-                       (worker_name, phone, email, address, skills, login_id))
+        # 2. Create Worker with 24/7 preference
+        cursor.execute("INSERT INTO worker (worker_name, phone, email, address, skills, login_id, is_24_7) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
+                       (worker_name, phone, email, address, skills, login_id, is_24_7))
         
         conn.commit()
         cursor.close()
@@ -1495,8 +1631,8 @@ def accept_worker(pending_id):
         login_id = cursor.lastrowid
 
         # 3. Create Worker entry
-        cursor.execute("INSERT INTO worker (worker_name, phone, email, address, skills, login_id) VALUES (%s, %s, %s, %s, %s, %s)", 
-                       (pending_worker['worker_name'], pending_worker['phone'], pending_worker['email'], pending_worker['address'], skills_display_str, login_id))
+        cursor.execute("INSERT INTO worker (worker_name, phone, email, address, skills, login_id, is_24_7) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
+                       (pending_worker['worker_name'], pending_worker['phone'], pending_worker['email'], pending_worker['address'], skills_display_str, login_id, pending_worker['is_24_7']))
         worker_id = cursor.lastrowid
 
         # 5. Delete from pending table

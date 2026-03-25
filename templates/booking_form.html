@@ -18,23 +18,40 @@
             </div>
             {% endif %}
             
+            <form action="/book_service" method="POST">
+                <!-- This hidden input sends the service_id to the backend -->
+                <input type="hidden" name="service_id" value="{{ service.service_id }}">
+                
             {% if service.service_type == 'premium' %}
                 <div class="alert-info">
                     <strong>Premium Service:</strong> Please select your preferred date and time.
+                </div>
+
+                <!-- Panic Button / Urgency Toggle -->
+                <div class="panic-button-container">
+                    <label class="switch">
+                        <input type="checkbox" id="urgencyToggle" name="urgency_mode" value="1" onchange="toggleUrgency()">
+                        <span class="slider round"></span>
+                    </label>
+                    <span class="panic-label"><strong>EMERGENCY / PANIC MODE</strong> (Book Now)</span>
+                </div>
+                
+                <div id="urgency-warning" class="payment-warning" style="display: none; background-color: #ffe6e6; border-color: #ffcccc; color: #cc0000; margin-bottom: 20px;">
+                    <strong>⚠️ URGENCEY PRICING APPLIED!</strong><br>
+                    Booking will be created for <strong>NOW</strong>.<br>
+                    Service price will be <strong>1.5x</strong> normal rate.<br>
+                    <strong>A 24/7 expert will be assigned automatically.</strong><br>
+                    <strong>Online Payment Only.</strong>
                 </div>
             {% else %}
                 <p>The booking will be recorded with the current date and time.</p> 
             {% endif %}
 
-            <form action="/book_service" method="POST">
-                <!-- This hidden input sends the service_id to the backend -->
-                <input type="hidden" name="service_id" value="{{ service.service_id }}">
-                
                 {% if service.service_type == 'premium' %}
-                <div class="form-group">
+                <div class="form-group" id="date-time-section">
                     <label class="form-label">Select Date & Time:</label>
-                    <input type="date" name="booking_date" required min="{{ now.strftime('%Y-%m-%d') }}" class="form-control" style="margin-bottom: 10px;">
-                    <input type="time" name="booking_time" required class="form-control">
+                    <input type="date" name="booking_date" id="date_input" required min="{{ now.strftime('%Y-%m-%d') }}" class="form-control" style="margin-bottom: 10px;">
+                    <input type="time" name="booking_time" id="time_input" required class="form-control">
                 </div>
                 {% endif %}
 
@@ -46,20 +63,23 @@
                 </div>
                 {% endif %}
 
-                <div class="form-group">
+                <div class="form-group" id="worker-selection-section">
                     <label class="form-label">Choose a Worker (Optional):</label>
                     
                     <div class="radio-group">
                         <input type="radio" id="no_worker" name="worker_id" value="none" checked>
-                        <label for="no_worker">No Preference (Assign later)</label>
+                        <label for="no_worker">No Preference</label>
                     </div>
 
                     {% for worker in workers %}
-                    <div class="worker-card">
-                        <input type="radio" id="worker_{{ worker.worker_id }}" name="worker_id" value="{{ worker.worker_id }}">
+                    <div class="worker-card {% if not worker.is_available %}unavailable{% endif %}">
+                        <input type="radio" id="worker_{{ worker.worker_id }}" name="worker_id" value="{{ worker.worker_id }}" data-is-24-7="{{ worker.is_24_7 }}" {% if not worker.is_available %}disabled{% endif %}>
                         <label for="worker_{{ worker.worker_id }}">
                             <strong>{{ worker.worker_name }}</strong>
                             <br>
+                            {% if not worker.is_available %}
+                            <span class="status-msg">{{ worker.status_msg }}</span><br>
+                            {% endif %}
                             <span class="rating-star">★ {{ "%.1f"|format(worker.avg_rating) if worker.avg_rating else 'New' }}</span>
                         </label>
                     </div>
@@ -90,5 +110,48 @@
         <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
         <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
     </footer>
+
+    <script>
+        function toggleUrgency() {
+            var checkBox = document.getElementById("urgencyToggle");
+            var dateTimeSection = document.getElementById("date-time-section");
+            var dateInput = document.getElementById("date_input");
+            var timeInput = document.getElementById("time_input");
+            var urgencyWarning = document.getElementById("urgency-warning");
+            var workerRadios = document.getElementsByName("worker_id");
+            var noWorkerRadio = document.getElementById("no_worker");
+            var cashRadio = document.getElementById("cash");
+            var onlineRadio = document.getElementById("online");
+            var workerSelectionSection = document.getElementById("worker-selection-section");
+
+            if (checkBox.checked) {
+                // Panic Mode ON
+                if(dateTimeSection) dateTimeSection.style.display = "none";
+                if(dateInput) dateInput.removeAttribute("required");
+                if(timeInput) timeInput.removeAttribute("required");
+                urgencyWarning.style.display = "block";
+
+                // Enforce Online Payment
+                cashRadio.disabled = true;
+                onlineRadio.checked = true;
+
+                // Hide Worker Selection and Force Random
+                if(workerSelectionSection) workerSelectionSection.style.display = "none";
+                noWorkerRadio.checked = true; // Default to no preference to avoid invalid selection
+            } else {
+                // Panic Mode OFF
+                if(dateTimeSection) dateTimeSection.style.display = "block";
+                if(dateInput) dateInput.setAttribute("required", "");
+                if(timeInput) timeInput.setAttribute("required", "");
+                urgencyWarning.style.display = "none";
+
+                // Restore Payment Options
+                cashRadio.disabled = false;
+
+                // Show Worker Selection
+                if(workerSelectionSection) workerSelectionSection.style.display = "block";
+            }
+        }
+    </script>
 </body>
 </html>
