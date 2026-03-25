@@ -761,10 +761,11 @@ def worker_edit_booking(booking_id):
     # GET request: Fetch full details for the edit page
     cursor.execute("""
         SELECT b.booking_id, b.booking_date, b.booking_status,
-               c.cust_name, s.service_name
+               c.cust_name, s.service_name, p.payment_status, p.amount
         FROM booking b
         JOIN customer c ON b.customer_id = c.customer_id
         JOIN service s ON b.service_id = s.service_id
+        LEFT JOIN payment p ON b.booking_id = p.booking_id
         WHERE b.booking_id = %s
     """, (booking_id,))
     booking_details = cursor.fetchone()
@@ -786,7 +787,7 @@ def booking_details(booking_id):
         SELECT 
             b.booking_id, b.booking_date, b.booking_time, b.booking_status,
             b.customer_id, b.worker_id,
-            s.service_name, p.amount,
+            s.service_name, p.amount, p.payment_status,
             c.cust_name, c.phone as cust_phone, c.address as cust_address,
             w.worker_name
         FROM booking b
@@ -838,11 +839,12 @@ def admin_dashboard():
     cursor = conn.cursor(dictionary=True)
     # Fetch all bookings for the admin view
     cursor.execute("""
-        SELECT b.booking_id, c.cust_name, w.worker_name, s.service_name, s.service_type, b.booking_date, b.booking_status
+        SELECT b.booking_id, c.cust_name, w.worker_name, s.service_name, s.service_type, b.booking_date, b.booking_status, p.payment_status, p.amount
         FROM booking b
         JOIN customer c ON b.customer_id = c.customer_id
         JOIN service s ON b.service_id = s.service_id
         LEFT JOIN worker w ON b.worker_id = w.worker_id
+        LEFT JOIN payment p ON b.booking_id = p.booking_id
         ORDER BY b.booking_date DESC
     """)
     bookings = cursor.fetchall()
@@ -878,6 +880,13 @@ def edit_booking(booking_id):
             
         cursor.execute("UPDATE booking SET worker_id = %s, booking_status = %s WHERE booking_id = %s", 
                        (worker_id, status, booking_id))
+        
+        if status == 'completed':
+            cursor.execute("SELECT payment_method FROM payment WHERE booking_id = %s", (booking_id,))
+            payment = cursor.fetchone()
+            if payment and payment['payment_method'] == 'cash':
+                cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
+                flash('Booking marked as completed. Cash payment status updated to Paid.', 'success')
         conn.commit()
 
         # Send Notification to Customer if status is completed
@@ -913,10 +922,11 @@ def edit_booking(booking_id):
     # Fetch booking details
     cursor.execute("""
         SELECT b.booking_id, b.booking_date, b.booking_status, b.worker_id,
-               c.cust_name, s.service_name
+               c.cust_name, s.service_name, p.payment_status, p.amount
         FROM booking b
         JOIN customer c ON b.customer_id = c.customer_id
         JOIN service s ON b.service_id = s.service_id
+        LEFT JOIN payment p ON b.booking_id = p.booking_id
         WHERE b.booking_id = %s
     """, (booking_id,))
     booking = cursor.fetchone()
