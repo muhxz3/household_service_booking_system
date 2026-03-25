@@ -747,6 +747,24 @@ def worker_edit_booking(booking_id):
                     cursor.execute("UPDATE payment SET payment_status = 'cancelled' WHERE booking_id = %s", (booking_id,))
                 except mysql.connector.Error:
                     pass # Payment status stays as is if 'cancelled' isn't in ENUM
+                
+                # Check for online payment to send refund notification to customer
+                cursor.execute("""
+                    SELECT p.payment_method, c.email, c.cust_name 
+                    FROM booking b
+                    JOIN payment p ON b.booking_id = p.booking_id
+                    JOIN customer c ON b.customer_id = c.customer_id
+                    WHERE b.booking_id = %s
+                """, (booking_id,))
+                details = cursor.fetchone()
+                if details and details['payment_method'] == 'online':
+                    send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled. As you have paid online, refunding will be done in few days.")
+                if details:
+                    msg_body = f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled."
+                    if details['payment_method'] == 'online':
+                        msg_body += " As you have paid online, refunding will be done in few days."
+                    send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", msg_body)
+
                 flash(f'Job #{booking_id} has been cancelled.', 'info')
             else:
                 flash(f'Job #{booking_id} status updated to {status.replace("_", " ")}.', 'info')
@@ -887,6 +905,28 @@ def edit_booking(booking_id):
             if payment and payment['payment_method'] == 'cash':
                 cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
                 flash('Booking marked as completed. Cash payment status updated to Paid.', 'success')
+        elif status == 'cancelled':
+            try:
+                cursor.execute("UPDATE payment SET payment_status = 'cancelled' WHERE booking_id = %s", (booking_id,))
+            except mysql.connector.Error:
+                pass
+            
+            # Check for online payment to send refund notification to customer
+            cursor.execute("""
+                SELECT p.payment_method, c.email, c.cust_name 
+                FROM booking b
+                JOIN payment p ON b.booking_id = p.booking_id
+                JOIN customer c ON b.customer_id = c.customer_id
+                WHERE b.booking_id = %s
+            """, (booking_id,))
+            details = cursor.fetchone()
+            if details and details['payment_method'] == 'online':
+                send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled by admin. As you have paid online, refunding will be done in few days.")
+            if details:
+                msg_body = f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled by admin."
+                if details['payment_method'] == 'online':
+                    msg_body += " As you have paid online, refunding will be done in few days."
+                send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", msg_body)
         conn.commit()
 
         # Send Notification to Customer if status is completed
@@ -901,7 +941,7 @@ def edit_booking(booking_id):
                 )
 
         # Send Notification to Worker if assigned
-        if worker_id and status != 'completed':
+        if worker_id and status not in ['completed', 'cancelled']:
             cursor.execute("SELECT email, worker_name FROM worker WHERE worker_id = %s", (worker_id,))
             worker_data = cursor.fetchone()
             
