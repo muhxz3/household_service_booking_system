@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import mysql.connector
+import re
 from datetime import datetime, timedelta
 from config import (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, 
                     MAIL_SERVER, MAIL_PORT, MAIL_USERNAME,
@@ -42,6 +43,16 @@ def get_db_connection():
 def generate_otp():
     """Generates a 6-digit random OTP."""
     return str(random.randint(100000, 999999))
+
+def is_valid_email(email):
+    """Validates the email format."""
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(email_regex, email) is not None
+
+def is_valid_phone(phone):
+    """Validates that the phone number is exactly 10 digits."""
+    phone_regex = r'^\d{10}$'
+    return re.match(phone_regex, phone) is not None
 
 def send_otp_email(email, otp, purpose='registration'):
     """Sends an email with the OTP for a given purpose."""
@@ -302,6 +313,14 @@ def register_page():
         username = request.form['username']
         password = request.form['password']
 
+        if not is_valid_email(email):
+            flash('Invalid email format!', 'error')
+            return redirect(url_for('register_page'))
+
+        if not is_valid_phone(phone):
+            flash('Phone number must be exactly 10 digits!', 'error')
+            return redirect(url_for('register_page'))
+
         if len(password) < 8:
             flash('Password must be at least 8 characters long.', 'error')
             return redirect(url_for('register_page'))
@@ -472,6 +491,14 @@ def worker_register():
         username = request.form['username']
         password = request.form['password']
         is_24_7 = 1 if 'is_24_7' in request.form else 0
+
+        if not is_valid_email(email):
+            flash('Invalid email format!', 'error')
+            return redirect(url_for('worker_register'))
+
+        if not is_valid_phone(phone):
+            flash('Phone number must be exactly 10 digits!', 'error')
+            return redirect(url_for('worker_register'))
 
         if len(password) < 8:
             flash('Password must be at least 8 characters long.', 'error')
@@ -1418,6 +1445,14 @@ def customer_edit_profile():
         username = request.form['username']
         new_password = request.form['password']
 
+        if not is_valid_email(email):
+            flash('Invalid email format!', 'error')
+            return redirect(url_for('customer_edit_profile'))
+
+        if not is_valid_phone(phone):
+            flash('Phone number must be exactly 10 digits!', 'error')
+            return redirect(url_for('customer_edit_profile'))
+
         if new_password and len(new_password) < 8:
             flash('Password must be at least 8 characters long.', 'error')
             return redirect(url_for('customer_edit_profile'))
@@ -1637,6 +1672,14 @@ def add_worker():
         password = request.form['password']
         is_24_7 = 1 if 'is_24_7' in request.form else 0
 
+        if not is_valid_email(email):
+            flash('Invalid email format!', 'error')
+            return redirect(url_for('add_worker'))
+
+        if not is_valid_phone(phone):
+            flash('Phone number must be exactly 10 digits!', 'error')
+            return redirect(url_for('add_worker'))
+
         if len(password) < 8:
             flash('Password must be at least 8 characters long.', 'error')
             return redirect(url_for('add_worker'))
@@ -1724,6 +1767,15 @@ def edit_worker(worker_id):
         email = request.form['email']
         address = request.form['address']
         skills = request.form['skills']
+
+        if not is_valid_email(email):
+            flash('Invalid email format!', 'error')
+            return redirect(url_for('edit_worker', worker_id=worker_id))
+
+        if not is_valid_phone(phone):
+            flash('Phone number must be exactly 10 digits!', 'error')
+            return redirect(url_for('edit_worker', worker_id=worker_id))
+
         cursor.execute("UPDATE worker SET worker_name=%s, phone=%s, email=%s, address=%s, skills=%s WHERE worker_id=%s", 
                        (worker_name, phone, email, address, skills, worker_id))
         conn.commit()
