@@ -9,14 +9,15 @@
     <nav class="navbar">
         <div class="logo">Admin Panel</div>
         <div class="nav-links">
-            <a href="/admin/dashboard">Dashboard</a>
-            <a href="/logout">Logout</a>
+            <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('admin_manage_subscriptions') }}">Manage Subscriptions</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
         </div>
     </nav>
 
     <div class="dashboard-container">
         <h2>Manage Workers</h2>
-        <a href="/admin/add_worker" class="btn" style="width: auto; display: inline-block; margin-bottom: 20px;">Add New Worker</a>
+        <a href="{{ url_for('add_worker') }}" class="btn" style="width: auto; display: inline-block; margin-bottom: 20px;">Add New Worker</a>
         
         <table class="data-table">
             <thead>

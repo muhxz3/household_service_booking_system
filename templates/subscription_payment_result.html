@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Payment Result</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="login-box">
+            <h2 class="text-{{ status }}">
+                {% if status == 'success' %}Payment Successful!{% elif status == 'failed' %}Payment Failed{% else %}Payment Processing{% endif %}
+            </h2>
+            <p>{{ message }}</p>
+            <br>
+            {% if status == 'success' %}
+                <a href="/dashboard" class="btn">Go to Dashboard</a>
+            {% else %}
+                <a href="/subscription/plans" class="btn">Try Again</a>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

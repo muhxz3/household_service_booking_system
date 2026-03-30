@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Payment Simulation - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('my_bookings') }}">My Bookings</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="payment-box">
+            <form action="/process_subscription_payment_simulation" method="POST">
+                <input type="hidden" name="subscription_id" value="{{ subscription_id }}">
+                <input type="hidden" name="amount" value="{{ amount }}">
+
+                <div class="booking-summary">
+                    <h3>Plan: {{ plan_name }}</h3>
+                    <div class="amount-display">₹{{ "%.2f"|format(amount) }}</div>
+                </div>
+
+                <p style="text-align: center; margin-bottom: 20px;">This is a payment simulation. Please select a scenario to test the system behavior:</p>
+
+                <div class="simulation-actions" style="margin-top: 30px;">
+                    <button type="submit" name="scenario" value="success" class="btn-sim btn-success">✅ Successful Payment</button>
+                    <button type="submit" name="scenario" value="failure" class="btn-sim btn-failure">❌ Payment Failed (Declined)</button>
+                 </div>
+            </form>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p><strong>My Eazy Day</strong></p>
+        <p>📍 Near Canara Bank, New Bus Stand, Kasaragod, 671124</p>
+        <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
+        <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
+    </footer>
+</body>
+</html>

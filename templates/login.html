@@ -13,9 +13,11 @@
             <h2>Select Your Role</h2>
             <p>Please choose how you want to login:</p>
             
-            <a href="{{ url_for('login_page', role='customer') }}" class="btn">Customer</a>
-            <a href="{{ url_for('login_page', role='worker') }}" class="btn">Worker</a>
-            <a href="{{ url_for('login_page', role='admin') }}" class="btn">Admin</a>
+            <div class="role-selection">
+                <a href="{{ url_for('login_page', role='customer') }}" class="btn">👤 Customer</a>
+                <a href="{{ url_for('login_page', role='worker') }}" class="btn">🛠️ Worker</a>
+                <a href="{{ url_for('login_page', role='admin') }}" class="btn">🔑 Admin</a>
+            </div>
             
             <p style="margin-top: 20px;"><a href="/">Back to Home</a></p>
             {% else %}
@@ -31,6 +33,7 @@
             {% endwith %}
             <form action="{{ url_for('login_page', role=role) }}" method="POST">
                 <input type="hidden" name="role" value="{{ role }}">
+                <input type="hidden" name="next" value="{{ next or '' }}">
                 <div class="input-group">
                     <label for="username">Username</label>
                     <input type="text" id="username" name="username" required>
@@ -52,5 +55,6 @@
             {% endif %}
         </div>
     </div>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

@@ -10,9 +10,7 @@
     <nav class="navbar">
         <div class="logo">My Eazy Day</div>
         <div class="nav-links">
-            <a href="/dashboard">Home</a>
             <a href="/dashboard">Book Service</a>
-            <a href="/my_bookings">My Bookings</a>
             <a href="/logout">Logout</a>
         </div>
     </nav>
@@ -50,7 +48,11 @@
                     <td>
                         {% if booking.payment_status %}
                             <span class="payment-badge payment-{{ booking.payment_status.lower() }}">
-                                {{ booking.payment_method|title }} - {{ booking.payment_status }}
+                                {% if booking.is_subscription %}
+                                    Membership Credit
+                                {% else %}
+                                    {{ booking.payment_method|title }} - {{ booking.payment_status }}
+                                {% endif %}
                             </span>
                         {% else %}
                             <span class="payment-badge payment-pending">Pending</span>
@@ -64,6 +66,10 @@
                         {% endif %}
                     </td>
                     <td>
+                        {% if booking.payment_status == 'pending' and booking.payment_method == 'online' and booking.amount > 0 and booking.booking_status != 'cancelled' %}
+                            <a href="{{ url_for('payment_page', booking_id=booking.booking_id) }}" class="btn" style="padding: 5px; font-size: 0.8em; background-color: #f39c12; width: auto; margin-bottom: 5px;">Pay Online</a>
+                        {% endif %}
+
                         {% if booking.booking_status == 'completed' %}
                             {% if booking.rating %}
                                 <span style="color: #f39c12; font-weight: bold;">★ {{ booking.rating }}</span>

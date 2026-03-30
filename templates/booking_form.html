@@ -10,7 +10,14 @@
     <div class="container">
         <div class="login-box">
             <!-- The service name will be passed from Python later -->
-            <h2>Book: {{ service.service_name if service else 'Service' }}</h2>
+            {% if service %}
+            <h2>Book: {{ service.service_name }}</h2>
+            <p class="price-display" style="color: #2c3e50; font-size: 1.1em;">
+                Rate starts at: <span style="font-weight: bold;">₹{{ "%.2f"|format(service.price) }}</span> 
+                {% if 'Laundry' in service.service_name %} per kg {% elif 'Cleaning' in service.service_name or 'Plumbing' in service.service_name or 'Electric' in service.service_name or 'Gardening' in service.service_name %} per hour
+                {% endif %}
+            </p>
+            {% endif %}
             
             {% if error %}
             <div class="alert-error">
@@ -18,51 +25,42 @@
             </div>
             {% endif %}
             
-            <form action="/book_service" method="POST">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert-{{ category }}" style="margin-bottom: 15px;">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% if service %}
+            <form action="/book_service" method="POST" id="bookingForm">
                 <!-- This hidden input sends the service_id to the backend -->
                 <input type="hidden" name="service_id" value="{{ service.service_id }}">
-                
-            {% if service.service_type == 'premium' %}
-                <div class="alert-info">
-                    <strong>Premium Service:</strong> Please select your preferred date and time.
-                </div>
 
-                <!-- Panic Button / Urgency Toggle -->
-                <div class="panic-button-container">
-                    <label class="switch">
-                        <input type="checkbox" id="urgencyToggle" name="urgency_mode" value="1" onchange="toggleUrgency()">
-                        <span class="slider round"></span>
-                    </label>
-                    <span class="panic-label"><strong>EMERGENCY / PANIC MODE</strong> (Book Now)</span>
+            {% if service.service_type == 'emergency' %}
+                <div class="alert-info" style="background-color: #fff5f5; border-left: 5px solid #cc0000; color: #cc0000; text-align: left; padding: 15px; margin-bottom: 20px;">
+                    <strong>🚨 EMERGENCY SERVICE:</strong><br>
+                    - Booking will be processed for <strong>IMMEDIATE</strong> dispatch.<br>
+                    - A 24/7 expert will be assigned automatically.<br>
+                    - <strong>Online Payment Only.</strong>
                 </div>
-                
-                <div id="urgency-warning" class="payment-warning" style="display: none; background-color: #ffe6e6; border-color: #ffcccc; color: #cc0000; margin-bottom: 20px;">
-                    <strong>⚠️ URGENCEY PRICING APPLIED!</strong><br>
-                    Booking will be created for <strong>NOW</strong>.<br>
-                    Service price will be <strong>1.5x</strong> normal rate.<br>
-                    <strong>A 24/7 expert will be assigned automatically.</strong><br>
-                    <strong>Online Payment Only.</strong>
-                </div>
-            {% else %}
-                <p>The booking will be recorded with the current date and time.</p> 
             {% endif %}
-
-                {% if service.service_type == 'premium' %}
+                {% if service.service_type != 'emergency' %}
                 <div class="form-group" id="date-time-section">
                     <label class="form-label">Select Date & Time:</label>
                     <input type="date" name="booking_date" id="date_input" required min="{{ now.strftime('%Y-%m-%d') }}" class="form-control" style="margin-bottom: 10px;">
-                    <input type="time" name="booking_time" id="time_input" required class="form-control">
+                    <div id="time_section">
+                        <input type="time" name="booking_time" id="time_input" required class="form-control"
+                               {% if service.service_type == 'regular' %}min="09:00" max="18:00"{% endif %}>
+                        {% if service.service_type == 'regular' %}<small style="color: #666;"><br>Available between 9:00 AM - 6:00 PM</small>{% endif %}
+                    </div>
                 </div>
                 {% endif %}
 
-                {% if service.category == 'pickup' %}
-                <div class="form-group">
-                    <label class="form-label">Distance from Center (km):</label>
-                    <input type="number" name="pickup_distance" min="0" step="0.1" class="form-control" placeholder="0" required>
-                    <small style="color: #666;">First 5 km free, ₹20 for each additional km.</small>
-                </div>
-                {% endif %}
-
+                {% if service.service_type != 'emergency' %}
                 <div class="form-group" id="worker-selection-section">
                     <label class="form-label">Choose a Worker (Optional):</label>
                     
@@ -76,31 +74,54 @@
                         <input type="radio" id="worker_{{ worker.worker_id }}" name="worker_id" value="{{ worker.worker_id }}" data-is-24-7="{{ worker.is_24_7 }}" {% if not worker.is_available %}disabled{% endif %}>
                         <label for="worker_{{ worker.worker_id }}">
                             <strong>{{ worker.worker_name }}</strong>
+                            {% if worker.status_msg %}
                             <br>
-                            {% if not worker.is_available %}
-                            <span class="status-msg">{{ worker.status_msg }}</span><br>
+                            <span class="status-msg">{{ worker.status_msg }}</span>
                             {% endif %}
+                            <br>
                             <span class="rating-star">★ {{ "%.1f"|format(worker.avg_rating) if worker.avg_rating else 'New' }}</span>
                         </label>
                     </div>
                     {% endfor %}
                 </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Payment Method:</label>
-                    <div class="payment-option">
-                        <input type="radio" id="cash" name="payment_method" value="cash" checked>
-                        <label for="cash">Cash after Service</label>
-                    </div>
-                    <div class="payment-warning">
-                        <input type="radio" id="online" name="payment_method" value="online">
-                        <label for="online">Pay Online Now (Test Mode - No Real Payment)</label>
-                    </div>
-                </div>
+                {% endif %}
 
-                <button type="submit" class="btn">Confirm Booking</button>
+{% if credits %}
+                <div class="form-group" style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <label class="form-label" style="color: #166534; display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" name="use_subscription" value="1" id="useCreditCheckbox"
+                               {% if not credits.is_unlimited and credits.remaining_quantity <= 0 %}disabled title="No credits remaining"{% endif %}
+                               onchange="calculateTotal()" style="width: 20px; height: 20px;" {% if service.service_type == 'emergency' %}checked{% endif %}>
+                        <span>Use Subscription Credit</span>
+                    </label>
+                    <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #166534;">
+                        Available: 
+                        <strong>
+                            {% if credits.is_unlimited %}
+                                Unlimited
+                            {% else %}
+                                {{ credits.remaining_quantity }} sessions
+                            {% endif %}
+                        </strong>
+                        {% if not credits.is_unlimited and credits.remaining_quantity <= 0 %}
+                            <br><small style="color: #dc3545;">(No credits remaining for this service)</small>
+                        {% endif %}
+                    </p>
+                </div>
+                {% endif %}
+                
+                {% if service.service_type == 'emergency' and not credits %}
+                <div class="booking-summary" style="margin-top: 20px; display: block; background: #fff5f5; text-align: center; padding: 15px; border-radius: 8px; border: 1px solid #ffcccc;">
+                    <h3 style="margin: 0; font-size: 1rem; color: #cc0000;">Advance Booking Fee</h3>
+                    <div class="amount-display" style="font-size: 1.8rem; font-weight: bold; color: #cc0000;">₹100.00</div>
+                    <small>Remaining balance calculated after service.</small>
+                </div>
+                {% endif %}
+
+                <button type="submit" class="btn">{% if service.service_type == 'emergency' %}Confirm Emergency Booking{% else %}Confirm Booking{% endif %}</button>
             </form>
             <p><a href="/dashboard">Cancel and go back</a></p>
+            {% endif %}
         </div>
     </div>
 
@@ -110,48 +131,108 @@
         <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
         <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
     </footer>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 
     <script>
-        function toggleUrgency() {
-            var checkBox = document.getElementById("urgencyToggle");
-            var dateTimeSection = document.getElementById("date-time-section");
-            var dateInput = document.getElementById("date_input");
-            var timeInput = document.getElementById("time_input");
-            var urgencyWarning = document.getElementById("urgency-warning");
-            var workerRadios = document.getElementsByName("worker_id");
-            var noWorkerRadio = document.getElementById("no_worker");
-            var cashRadio = document.getElementById("cash");
-            var onlineRadio = document.getElementById("online");
-            var workerSelectionSection = document.getElementById("worker-selection-section");
+        function adjustValue(id, delta) {
+            const input = document.getElementById(id);
+            let newVal = parseFloat(input.value) + delta;
+            const min = parseFloat(input.getAttribute('min')) || 0;
+            if (newVal < min) newVal = min;
+            
+            // Add a subtle pop animation to the input on change
+            input.parentElement.style.transform = 'scale(1.05)';
+            setTimeout(() => {
+                input.parentElement.style.transform = 'scale(1)';
+            }, 100);
 
-            if (checkBox.checked) {
-                // Panic Mode ON
-                if(dateTimeSection) dateTimeSection.style.display = "none";
-                if(dateInput) dateInput.removeAttribute("required");
-                if(timeInput) timeInput.removeAttribute("required");
-                urgencyWarning.style.display = "block";
+            input.value = newVal.toFixed(1);
+            calculateTotal();
+        }
 
-                // Enforce Online Payment
-                cashRadio.disabled = true;
-                onlineRadio.checked = true;
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                obj.innerHTML = (progress * (end - start) + start).toFixed(2);
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
 
-                // Hide Worker Selection and Force Random
-                if(workerSelectionSection) workerSelectionSection.style.display = "none";
-                noWorkerRadio.checked = true; // Default to no preference to avoid invalid selection
+        function updateKmValue(val) {
+            document.getElementById('km_display').innerText = parseFloat(val).toFixed(1);
+            const trackColor = val > 5 ? '#f39c12' : '#2E8B57';
+            document.getElementById('km_display').style.color = trackColor;
+            calculateTotal();
+        }
+
+        function calculateTotal() {
+            const basePrice = parseFloat("{{ service.price }}") || 0;
+            let units = 1.0;
+            let delivery = 0;
+
+            const hoursInput = document.getElementById('calc_hours');
+            const creditCheckbox = document.getElementById('useCreditCheckbox');
+            const cashRadio = document.getElementById('cash');
+            const onlineRadio = document.getElementById('online');
+
+            if (hoursInput) units = parseFloat(hoursInput.value) || 0;
+
+            let total = (basePrice * units) + delivery;
+
+            if (creditCheckbox && creditCheckbox.checked) {
+                total = 0;
+                if (cashRadio) cashRadio.disabled = true;
+                if (onlineRadio) onlineRadio.checked = true;
             } else {
-                // Panic Mode OFF
-                if(dateTimeSection) dateTimeSection.style.display = "block";
-                if(dateInput) dateInput.setAttribute("required", "");
-                if(timeInput) timeInput.setAttribute("required", "");
-                urgencyWarning.style.display = "none";
+                if (cashRadio && "{{ service.service_type }}" !== 'emergency') {
+                    cashRadio.disabled = false;
+                }
+            }
 
-                // Restore Payment Options
-                cashRadio.disabled = false;
-
-                // Show Worker Selection
-                if(workerSelectionSection) workerSelectionSection.style.display = "block";
+            const display = document.getElementById('estimated_total');
+            if (display) {
+                const currentVal = parseFloat(display.innerText.replace('₹', '')) || 0;
+                animateValue(display, currentVal, total, 300);
             }
         }
+
+        window.onload = function() {
+            const dateInput = document.getElementById('date_input');
+            const timeInput = document.getElementById('time_input');
+
+            if (dateInput && timeInput && "{{ service.service_type }}" === 'regular') {
+                const updateTimeMin = () => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    if (dateInput.value === todayStr) {
+                        const now = new Date();
+                        const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+                        // Only restrict min time to 'now' if 'now' is within 9am-6pm range
+                        timeInput.min = currentTime > "09:00" ? currentTime : "09:00";
+                    } else {
+                        timeInput.min = "09:00";
+                    }
+                };
+                dateInput.addEventListener('change', updateTimeMin);
+                updateTimeMin();
+            }
+
+            calculateTotal();
+            const serviceType = "{{ service.service_type if service else '' }}";
+            if (serviceType === 'emergency') {
+                const cashRadio = document.getElementById("cash");
+                const onlineRadio = document.getElementById("online");
+                const cashLabel = document.getElementById("cash-label");
+
+                if(cashRadio) cashRadio.disabled = true;
+                if(onlineRadio) onlineRadio.checked = true;
+                if(cashLabel) cashLabel.style.color = "#ccc";
+            }
+        };
     </script>
 </body>
 </html>

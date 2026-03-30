@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Subscription Credits - Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo">Admin Panel</div>
+        <div class="nav-links">
+            <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('admin_manage_subscriptions') }}">Manage Subscriptions</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <div class="welcome-section">
+            <h1>Credits for {{ subscription.cust_name }}</h1>
+            <p>Plan: <strong>{{ subscription.plan_name }}</strong> (ID: #{{ subscription.subscription_id }})</p>
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Service Name</th>
+                    <th>Remaining Credits</th>
+                    <th>Type</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for credit in credits %}
+                <tr>
+                    <td><strong>{{ credit.service_name }}</strong></td>
+                    <td>
+                        {% if credit.is_unlimited %}
+                            Unlimited
+                        {% else %}
+                            {{ credit.remaining_quantity }} sessions
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="status-badge" style="background-color: {% if credit.is_unlimited %}#2E8B57{% else %}#6c757d{% endif %};">
+                            {{ 'Unlimited' if credit.is_unlimited else 'Fixed' }}
+                        </span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" style="text-align: center; padding: 20px;">No credits found for this subscription.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <div style="margin-top: 30px; text-align: center;">
+            <a href="{{ url_for('admin_manage_subscriptions') }}" class="btn" style="width: auto; display: inline-block;">Back to Subscriptions</a>
+        </div>
+    </div>
+</body>
+</html>

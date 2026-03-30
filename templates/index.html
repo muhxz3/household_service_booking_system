@@ -16,11 +16,13 @@
             {% if session.loggedin %}
                 {% if session.role == 'customer' %}
                     <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                    <a href="{{ url_for('subscription_plans') }}">Subscribe</a>
                 {% elif session.role == 'worker' %}
                     <a href="{{ url_for('worker_dashboard') }}">Dashboard</a>
                 {% endif %}
                 <a href="{{ url_for('logout') }}">Logout</a>
             {% else %}
+                <a href="{{ url_for('subscription_plans') }}">Subscribe</a>
                 <a href="/register">Register</a>
                 <a href="/login">Login</a>
                 <a href="{{ url_for('worker_register') }}">Work With Us</a>
@@ -29,39 +31,36 @@
     </nav>
 
     <!-- Hero Section (Welcome Banner) -->
-    <header class="hero">
+    <header class="hero reveal">
         <div class="hero-content">
             <h1>Expert Home Services in Kasaragod</h1>
             <p>Cleaning, Laundry, Plumbing & More.</p>
-            <a href="/register" class="btn">Get Started</a>
+            <a href="/register" class="btn" style="box-shadow: 0 10px 20px rgba(0,0,0,0.2);">Get Started</a>
         </div>
     </header>
-
     <!-- Services Preview -->
     <section class="dashboard-container" id="services">
-        <h2 style="text-align:center; margin-bottom: 30px; color: var(--text-dark);">Our Services</h2>
+        <h2 class="reveal" style="text-align:center; margin-bottom: 30px; color: var(--text-dark);">Our Services</h2>
         
-        <!-- Premium Services -->
-        <h2 style="text-align:center; margin: 0 0 30px 0; color: #d35400;">Premium Services</h2>
-        <div class="services-grid premium-grid">
+        <!-- Emergency Services -->
+        <h2 class="reveal" style="text-align:center; margin: 0 0 30px 0; color: var(--text-dark);">🚨 <span style="color: #cc0000;">Emergency</span> Services </h2>
+        <div class="services-grid reveal">
             {% for service in services %}
-            {% if service.service_type == 'premium' %}
-            <div class="service-card premium-card">
-                <div class="service-icon">
-                    {% if 'Cleaning' in service.service_name %}🧹
-                    {% elif 'Gardening' in service.service_name %}🌱
-                    {% else %}⚡
-                    {% endif %}
-                </div>
-                <h3>{{ service.service_name }}</h3>
-                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
-                <span class="premium-badge">Premium</span>
+            {% if service.service_type == 'emergency' %}
+            <div class="service-card">
+                <div class="service-icon">🚨</div>
+                <h3>{{ service.service_name|replace('Emergency', '<span style="color: #cc0000;">Emergency</span>')|safe }}</h3>
+                <p>
+                    Starts at <span style="font-weight: bold;">₹{{ "%.2f"|format(service.price) }}</span> 
+                    {% if 'Laundry' in service.service_name %}per kg{% elif 'Cleaning' in service.service_name or 'Plumbing' in service.service_name or 'Electric' in service.service_name or 'Gardening' in service.service_name %}per hour{% endif %}
+                </p>
+                <span style="color: #cc0000; font-weight: bold;">Emergency</span>
                 <br><br>
-                <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
+                <a href="/service/{{ service.service_id }}" class="btn btn-outline">Details</a>
                 {% if session.loggedin %}
-                    <a href="/book/{{ service.service_id }}" class="btn btn-premium">Book Premium</a>
+                    <a href="/book/{{ service.service_id }}" class="btn">Book <span style="color: #cc0000;">NOW</span></a>
                 {% else %}
-                    <a href="{{ url_for('login_page') }}" class="btn btn-premium">Book Premium</a>
+                    <a href="{{ url_for('login_page') }}" class="btn">Book <span style="color: #cc0000;">NOW</span></a>
                 {% endif %}
             </div>
             {% endif %}
@@ -69,8 +68,8 @@
         </div>
 
         <!-- Standard Services -->
-        <h2 style="text-align:center; margin: 50px 0 30px 0; color: var(--text-dark);">Regular Services</h2>
-        <div class="services-grid">
+        <h2 class="reveal" style="text-align:center; margin: 50px 0 30px 0; color: var(--text-dark);">Regular Services</h2>
+        <div class="services-grid reveal">
             {% for service in services %}
             {% if service.service_type == 'regular' %}
             <div class="service-card">
@@ -81,8 +80,11 @@
                     {% else %}🔧
                     {% endif %}
                 </div>
-                <h3>{{ service.service_name }}</h3>
-                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
+                <h3>{{ service.service_name|replace('Emergency', '<span style="color: #cc0000;">Emergency</span>')|safe }}</h3>
+                <p>
+                    Starts at <span style="font-weight: bold;">₹{{ "%.2f"|format(service.price) }}</span>
+                    {% if 'Laundry' in service.service_name %}per kg{% elif 'Cleaning' in service.service_name or 'Plumbing' in service.service_name or 'Electric' in service.service_name or 'Gardening' in service.service_name %}per hour{% endif %}
+                </p>
                 <a href="/service/{{ service.service_id }}" class="btn btn-outline">View Details</a>
                 {% if session.loggedin %}
                     <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
@@ -96,9 +98,9 @@
     </section>
 
     <!-- Service Areas -->
-    <section class="dashboard-container" style="margin-top: 50px; margin-bottom: 50px;">
+    <section class="dashboard-container reveal" style="margin-top: 50px; margin-bottom: 50px;">
         <h2 style="text-align:center; margin-bottom: 30px; color: var(--text-dark);">Service Areas</h2>
-        <div class="login-box" style="max-width: 800px; margin: 0 auto; text-align: left;">
+        <div class="login-box" style="max-width: 800px; margin: 0 auto; text-align: left; border-top: 5px solid var(--primary-color);">
             <p>We operate within a 20km radius of New Bus Stand, Kasargod.</p>
             <ul style="line-height: 1.8; color: var(--text-dark);">
                 <li><strong>North(Monday & Friday):</strong> Kumbala, Arikkady, Uppala</li>
@@ -116,5 +118,6 @@
         <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
         <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
     </footer>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

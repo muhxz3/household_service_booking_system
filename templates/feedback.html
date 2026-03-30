@@ -13,16 +13,15 @@
             <p>How was your experience?</p>
 
             <form action="/feedback/{{ booking_id }}" method="POST">
-                <div class="input-group">
-                    <label for="rating">Rating (1-5 Stars)</label>
-                    <select name="rating" id="rating" required>
-                        <option value="5">⭐⭐⭐⭐⭐ (Excellent)</option>
-                        <option value="4">⭐⭐⭐⭐ (Good)</option>
-                        <option value="3">⭐⭐⭐ (Average)</option>
-                        <option value="2">⭐⭐ (Poor)</option>
-                        <option value="1">⭐ (Terrible)</option>
-                    </select>
+                <label class="form-label" style="text-align: center;">Your Rating</label>
+                <div class="star-rating" id="starContainer">
+                    <span data-value="1">★</span>
+                    <span data-value="2">★</span>
+                    <span data-value="3">★</span>
+                    <span data-value="4">★</span>
+                    <span data-value="5">★</span>
                 </div>
+                <input type="hidden" name="rating" id="selected_rating" value="5" required>
 
                 <div class="input-group">
                     <label for="comments">Comments</label>
@@ -34,5 +33,42 @@
             <p><a href="/my_bookings">Cancel</a></p>
         </div>
     </div>
+
+    <script>
+        const stars = document.querySelectorAll('.star-rating span');
+        const ratingInput = document.getElementById('selected_rating');
+
+        function updateStars(val, className) {
+            stars.forEach(s => {
+                if (parseInt(s.getAttribute('data-value')) <= val) {
+                    s.classList.add(className);
+                } else {
+                    s.classList.remove(className);
+                }
+            });
+        }
+
+        stars.forEach(star => {
+            // Hover effect
+            star.addEventListener('mouseover', () => {
+                const val = parseInt(star.getAttribute('data-value'));
+                updateStars(val, 'hovered');
+            });
+
+            star.addEventListener('mouseout', () => {
+                stars.forEach(s => s.classList.remove('hovered'));
+            });
+
+            // Click selection
+            star.addEventListener('click', () => {
+                const val = parseInt(star.getAttribute('data-value'));
+                ratingInput.value = val;
+                updateStars(val, 'active');
+            });
+        });
+        
+        // Set default active (5 stars)
+        updateStars(5, 'active');
+    </script>
 </body>
 </html>

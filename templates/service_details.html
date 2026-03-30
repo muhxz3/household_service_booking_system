@@ -20,7 +20,11 @@
         <div class="login-box">
             {% if service %}
                 <h2>{{ service.service_name }}</h2>
-                <p style="font-size: 1.2rem; color: var(--primary-color); font-weight: bold;">Price: ₹{{ "%.2f"|format(service.price) }}</p>
+                <p style="font-size: 1.2rem; color: var(--primary-color);">
+                    Starts at: <span style="font-weight: bold;">₹{{ "%.2f"|format(service.price) }}</span>
+                    {% if 'Laundry' in service.service_name %} per kg {% elif 'Cleaning' in service.service_name or 'Plumbing' in service.service_name or 'Electric' in service.service_name or 'Gardening' in service.service_name %} per hour
+                    {% endif %}
+                </p>
                 <p><strong>Category:</strong> {{ service.category|capitalize }}</p>
                 <p style="margin: 20px 0; color: var(--text-light);">This service is provided by our expert professionals. We ensure high quality and satisfaction.</p>
                 

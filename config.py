@@ -8,9 +8,9 @@ DB_NAME = 'household_service_db'
 MAIL_SERVER = 'smtp.gmail.com'
 MAIL_PORT = 587
 MAIL_USE_TLS = True
-MAIL_USERNAME = 'myeazyday@gmail.com'  # Enter your full Gmail address
-MAIL_PASSWORD = 'fmlkeodilosmezrz' # Enter the 16-digit App Password from Google
+MAIL_USERNAME = 'myeazyday@gmail.com'  
+MAIL_PASSWORD = 'fmlkeodilosmezrz' 
 MAIL_SENDER = 'myeazyday@gmail.com' # This is the "from" address that will appear on emails
 
 # --- Flask Secret Key ---
-SECRET_KEY = 'my_eazy_day_my_eazy_day_my_eazy_1' # Replace with a real random string
+SECRET_KEY = 'my_eazy_day_my_eazy_day_my_eazy_1' 

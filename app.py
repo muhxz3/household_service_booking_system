@@ -101,17 +101,23 @@ def send_notification_email(to_email, subject, body):
 @app.route('/index.html')
 def home():
     services = []
+    plans = []
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         # Fetch all services to display on the homepage
-        cursor.execute("SELECT service_id, service_name, category, price, service_type FROM service ORDER BY service_type DESC, service_name ASC")
+        cursor.execute("SELECT service_id, service_name, category, price, service_type FROM service WHERE service_type != 'premium' ORDER BY service_type ASC, service_name ASC")
         services = cursor.fetchall()
+        
+        # Fetch subscription plans to display on the home page
+        cursor.execute("SELECT * FROM subscription_plan")
+        plans = cursor.fetchall()
+        
         cursor.close()
         conn.close()
     except Exception as e:
-        print(f"Error fetching services for homepage: {e}")
-    return render_template('index.html', services=services)
+        print(f"Error fetching data for homepage: {e}")
+    return render_template('index.html', services=services, plans=plans)
 
 @app.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
@@ -233,10 +239,12 @@ def reset_password():
 @app.route('/login', methods=['GET', 'POST'])
 @app.route('/login/<role>', methods=['GET', 'POST'])
 def login_page(role=None):
+    next_url = request.args.get('next')
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
         role = request.form['role']
+        next_url = request.form.get('next')
 
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -283,6 +291,7 @@ def login_page(role=None):
                 if send_otp_email(user_email, otp, purpose='login'):
                     session['pending_login_email'] = user_email
                     session['pending_login_account'] = account # Store the whole account dict
+                    session['login_next_url'] = next_url
                     flash('An OTP has been sent to your email for verification.', 'success')
                     cursor.close()
                     conn.close()
@@ -299,7 +308,7 @@ def login_page(role=None):
         # Redirect back to login page on failure to show flash message
         return redirect(url_for('login_page', role=role))
 
-    return render_template('login.html', role=role)
+    return render_template('login.html', role=role, next=next_url)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register_page():
@@ -433,6 +442,7 @@ def verify_login():
     if 'pending_login_email' not in session:
         return redirect(url_for('login_page'))
 
+    next_url = session.get('login_next_url')
     if request.method == 'POST':
         submitted_otp = request.form['otp']
         email = session['pending_login_email']
@@ -456,10 +466,14 @@ def verify_login():
             conn.commit()
             session.pop('pending_login_email', None)
             session.pop('pending_login_account', None)
+            session.pop('login_next_url', None)
             
             cursor.close()
             conn.close()
 
+            if next_url:
+                return redirect(next_url)
+                
             if account['role'] == 'customer':
                 return redirect(url_for('dashboard'))
             elif account['role'] == 'worker':
@@ -568,18 +582,45 @@ def worker_register():
 
 @app.route('/dashboard')
 def dashboard():
+    if 'loggedin' not in session or session['role'] != 'customer':
+        return redirect(url_for('login_page'))
+        
     services = []
+    active_subscription = None
+    credits = []
+    credit_lookup = {}
+    
     try:
         conn = get_db_connection()
-        # dictionary=True lets us access columns by name (e.g., service['service_name'])
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service ORDER BY service_type DESC, service_name ASC")
+        cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service ORDER BY service_type ASC, service_name ASC")
         services = cursor.fetchall()
+        
+        # Fetch active subscription details
+        cursor.execute("""
+            SELECT cs.*, sp.plan_name 
+            FROM customer_subscription cs
+            JOIN subscription_plan sp ON cs.plan_id = sp.plan_id
+            WHERE cs.customer_id = (SELECT customer_id FROM customer WHERE login_id = %s)
+            AND cs.status = 'active' AND cs.end_date >= CURDATE()
+        """, (session['id'],))
+        active_subscription = cursor.fetchone()
+        
+        if active_subscription:
+            cursor.execute("""
+                SELECT sc.*, s.service_name 
+                FROM service_credits sc
+                JOIN service s ON sc.service_id = s.service_id
+                WHERE sc.subscription_id = %s
+            """, (active_subscription['subscription_id'],))
+            credits = cursor.fetchall()
+            credit_lookup = {c['service_id']: c for c in credits}
+            
         cursor.close()
         conn.close()
     except Exception as e:
         print(f"Error fetching services: {e}") # For debugging
-    return render_template('customer_dashboard.html', services=services)
+    return render_template('customer_dashboard.html', services=services, subscription=active_subscription, credits=credits, credit_lookup=credit_lookup, user_id=session['id'])
 
 @app.route('/resend_otp')
 def resend_otp():
@@ -609,6 +650,7 @@ def resend_otp():
 
     if send_otp_email(email, new_otp, purpose='registration'):
         flash('A new OTP has been sent to your email.', 'success')
+        pass
     else:
         flash('Failed to resend OTP. Please try again in a moment.', 'error')
 
@@ -635,6 +677,7 @@ def resend_login_otp():
 
     if send_otp_email(email, new_otp, purpose='login'):
         flash('A new OTP has been sent to your email.', 'success')
+        pass
     else:
         flash('Failed to resend OTP. Please try again in a moment.', 'error')
 
@@ -661,6 +704,7 @@ def resend_password_otp():
 
     if send_otp_email(email, new_otp, purpose='password_reset'):
         flash('A new OTP has been sent to your email.', 'success')
+        pass
     else:
         flash('Failed to resend OTP. Please try again.', 'error')
 
@@ -686,7 +730,7 @@ def worker_dashboard():
         worker_id = worker['worker_id']
         # Fetch jobs assigned to this worker
         cursor.execute("""
-            SELECT b.booking_id, c.cust_name, s.service_name, s.service_type, b.booking_date, b.booking_time, b.booking_status, p.payment_status, p.amount
+            SELECT b.booking_id, c.cust_name, s.service_name, s.service_type, b.booking_date, b.booking_time, b.booking_status, p.payment_status, p.amount, p.payment_method, b.subscription_id as is_subscription
             FROM booking b
             JOIN customer c ON b.customer_id = c.customer_id
             JOIN service s ON b.service_id = s.service_id
@@ -702,7 +746,7 @@ def worker_dashboard():
         if result and result['rating']:
             worker_rating = result['rating']
 
-    cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service ORDER BY service_type DESC, service_name ASC")
+    cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service WHERE service_type != 'premium' ORDER BY service_type ASC, service_name ASC")
     services = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -731,7 +775,17 @@ def worker_edit_booking(booking_id):
     
     worker_id = worker['worker_id']
 
-    cursor.execute("SELECT * FROM booking WHERE booking_id = %s AND worker_id = %s", (booking_id, worker_id))
+    # Fetch booking along with service details for calculation
+    cursor.execute("""
+        SELECT b.*, p.payment_status, p.payment_method, p.amount as current_amount,
+               s.service_name, s.service_type, s.category, s.price as base_price,
+               c.cust_name, c.phone as cust_phone, c.address as cust_address
+        FROM booking b 
+        JOIN payment p ON b.booking_id = p.booking_id 
+        JOIN service s ON b.service_id = s.service_id
+        JOIN customer c ON b.customer_id = c.customer_id
+        WHERE b.booking_id = %s AND b.worker_id = %s
+    """, (booking_id, worker_id))
     booking = cursor.fetchone()
 
     if not booking:
@@ -742,82 +796,98 @@ def worker_edit_booking(booking_id):
 
     if request.method == 'POST':
         status = request.form['status']
+        payment_method = request.form.get('payment_method', booking['payment_method'])
         
-        # Logic Fix: If status is already the same, don't update and don't error
-        if booking['booking_status'] == status:
-            flash(f'Status is already {status.title()}.', 'info')
-            cursor.close()
-            conn.close()
-            return redirect(url_for('worker_dashboard'))
+        total_amount = booking['current_amount']
+        payment_status = booking['payment_status']
 
-        cursor.execute("UPDATE booking SET booking_status = %s WHERE booking_id = %s AND worker_id = %s",
-                       (status, booking_id, worker_id))
+        # Bill calculation and collection logic only applies to non-subscription jobs
+        # and ensures we don't recalculate for already completed/cancelled jobs
+        if (not booking['subscription_id'] and 
+            booking['service_type'] in ['regular', 'emergency'] and 
+            status != 'cancelled' and 
+            booking['booking_status'] != 'completed'):
+            hours = float(request.form.get('hours', 1))
+            weight = float(request.form.get('weight', 1))
+            dist = float(request.form.get('pickup_distance', 0))
+            
+            base_rate = float(booking['base_price'])
+            units = weight if 'Laundry' in booking['service_name'] else hours
+            delivery = max(0, (dist - 5) * 20) if booking['category'] == 'pickup' else 0
+            
+            total_amount = (base_rate * units) + delivery
+            
+            # For emergency services, subtract the ₹100 advance already paid
+            if booking['service_type'] == 'emergency':
+                total_amount = max(0, total_amount - 100)
+            
+            if payment_method == 'online':
+                if status == 'completed' and total_amount > 0:
+                    flash("Cannot mark as 'Completed' for Online Payment until the customer pays the balance via their dashboard.", "error")
+                    return redirect(url_for('worker_edit_booking', booking_id=booking_id))
+                # Reset payment status to pending for customer action if there's a balance
+                payment_status = 'pending' if total_amount > 0 else 'completed'
+            elif payment_method == 'cash' and status == 'completed':
+                payment_status = 'completed'
 
-        if cursor.rowcount > 0:
-            if status == 'completed':
-                cursor.execute("SELECT payment_method FROM payment WHERE booking_id = %s", (booking_id,))
-                payment = cursor.fetchone()
-                if payment and payment['payment_method'] == 'cash':
-                    cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
-                    flash('Job and cash payment marked as completed.', 'info')
-                
+        # Credit Restoration Logic: If a worker cancels a subscription booking, return the credit
+        if status == 'cancelled' and booking['booking_status'] != 'cancelled' and booking['subscription_id']:
+            cursor.execute("""
+                UPDATE service_credits 
+                SET remaining_quantity = remaining_quantity + 1 
+                WHERE subscription_id = %s AND service_id = %s AND is_unlimited = 0
+            """, (booking['subscription_id'], booking['service_id']))
+
+        # Update Booking Status
+        cursor.execute("UPDATE booking SET booking_status = %s WHERE booking_id = %s", (status, booking_id))
+
+        # Update Payment Details
+        if status == 'cancelled':
+            payment_status = 'cancelled'
+
+        cursor.execute("""
+            UPDATE payment 
+            SET amount = %s, payment_method = %s, payment_status = %s 
+            WHERE booking_id = %s
+        """, (total_amount, payment_method, payment_status, booking_id))
+
+        # Commit changes first
+        conn.commit()
+
+        # Check transitions for notifications and feedback
+        if status != booking['booking_status'] or total_amount != float(booking['current_amount']) or payment_method != booking['payment_method']:
+            if status == 'completed' and booking['booking_status'] != 'completed':
+                if payment_method == 'cash':
+                    flash('Job and cash payment marked as completed.', 'success')
+                pass
+
                 # Notify Customer of completion
                 cursor.execute("SELECT c.email, c.cust_name, s.service_name FROM booking b JOIN customer c ON b.customer_id = c.customer_id JOIN service s ON b.service_id = s.service_id WHERE b.booking_id = %s", (booking_id,))
                 details = cursor.fetchone()
                 if details:
                     send_notification_email(details['email'], f"Service Completed - Booking #{booking_id}", f"Hello {details['cust_name']},\n\nYour service '{details['service_name']}' has been marked as completed by the worker.\n\nWe hope you are satisfied with our work. Please log in to your dashboard to provide feedback.\n\nThank you!")
-                else:
-                    flash('Job marked as completed.', 'info')
-            elif status == 'cancelled':
-                # Attempt to update payment status, ignore if schema doesn't support it (avoids crash)
-                try:
-                    cursor.execute("UPDATE payment SET payment_status = 'cancelled' WHERE booking_id = %s", (booking_id,))
-                except mysql.connector.Error:
-                    pass # Payment status stays as is if 'cancelled' isn't in ENUM
-                
-                # Check for online payment to send refund notification to customer
-                cursor.execute("""
-                    SELECT p.payment_method, c.email, c.cust_name 
-                    FROM booking b
-                    JOIN payment p ON b.booking_id = p.booking_id
-                    JOIN customer c ON b.customer_id = c.customer_id
-                    WHERE b.booking_id = %s
-                """, (booking_id,))
+            
+            elif status == 'cancelled' and booking['booking_status'] != 'cancelled':
+                # Notify Customer of cancellation (Standard message)
+                cursor.execute("SELECT c.email, c.cust_name FROM booking b JOIN customer c ON b.customer_id = c.customer_id WHERE b.booking_id = %s", (booking_id,))
                 details = cursor.fetchone()
-                if details and details['payment_method'] == 'online':
-                    send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled. As you have paid online, refunding will be done in few days.")
                 if details:
-                    msg_body = f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled."
-                    if details['payment_method'] == 'online':
-                        msg_body += " As you have paid online, refunding will be done in few days."
-                    send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", msg_body)
-
+                    send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled by the worker.")
                 flash(f'Job #{booking_id} has been cancelled.', 'info')
             else:
-                flash(f'Job #{booking_id} status updated to {status.replace("_", " ")}.', 'info')
-            conn.commit()
+                flash('Booking details updated successfully.', 'success')
+                pass
         else:
-            flash('Could not update status.', 'error')
+            flash('No changes were made to the booking.', 'info')
         
         cursor.close()
         conn.close()
         return redirect(url_for('worker_dashboard'))
 
-    # GET request: Fetch full details for the edit page
-    cursor.execute("""
-        SELECT b.booking_id, b.booking_date, b.booking_status,
-               c.cust_name, s.service_name, p.payment_status, p.amount
-        FROM booking b
-        JOIN customer c ON b.customer_id = c.customer_id
-        JOIN service s ON b.service_id = s.service_id
-        LEFT JOIN payment p ON b.booking_id = p.booking_id
-        WHERE b.booking_id = %s
-    """, (booking_id,))
-    booking_details = cursor.fetchone()
-
+    # GET request: Uses the booking data fetched at the start of the function
     cursor.close()
     conn.close()
-    return render_template('worker_edit_booking.html', booking=booking_details)
+    return render_template('worker_edit_booking.html', booking=booking)
 
 @app.route('/booking/details/<int:booking_id>')
 def booking_details(booking_id):
@@ -831,7 +901,7 @@ def booking_details(booking_id):
     cursor.execute("""
         SELECT 
             b.booking_id, b.booking_date, b.booking_time, b.booking_status,
-            b.customer_id, b.worker_id,
+            b.customer_id, b.worker_id, b.subscription_id,
             s.service_name, p.amount, p.payment_status,
             c.cust_name, c.phone as cust_phone, c.address as cust_address,
             w.worker_name
@@ -884,16 +954,18 @@ def admin_dashboard():
     cursor = conn.cursor(dictionary=True)
     # Fetch all bookings for the admin view
     cursor.execute("""
-        SELECT b.booking_id, c.cust_name, w.worker_name, s.service_name, s.service_type, b.booking_date, b.booking_status, p.payment_status, p.amount
+        SELECT b.booking_id, c.cust_name, w.worker_name, s.service_name, s.service_type, b.booking_date, b.booking_status, p.payment_status, p.payment_method, p.amount,
+        b.subscription_id as is_subscription
         FROM booking b
         JOIN customer c ON b.customer_id = c.customer_id
         JOIN service s ON b.service_id = s.service_id
         LEFT JOIN worker w ON b.worker_id = w.worker_id
         LEFT JOIN payment p ON b.booking_id = p.booking_id
+        WHERE s.service_type != 'premium'
         ORDER BY b.booking_date DESC
     """)
     bookings = cursor.fetchall()
-    cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service")
+    cursor.execute("SELECT service_id, service_name, price, category, service_type FROM service WHERE service_type != 'premium' ORDER BY service_type ASC, service_name ASC")
     services = cursor.fetchall()
 
     # Fetch pending worker registrations
@@ -919,6 +991,23 @@ def edit_booking(booking_id):
     if request.method == 'POST':
         worker_id = request.form['worker_id']
         status = request.form['status'].strip()
+
+        # Fetch current booking state for credit restoration
+        cursor.execute("SELECT booking_status, subscription_id, service_id FROM booking WHERE booking_id = %s", (booking_id,))
+        current_booking = cursor.fetchone()
+
+        # Prevent setting subscription jobs back to pending
+        if current_booking['subscription_id'] and status == 'pending':
+            flash("Subscription-based bookings cannot be set to 'Pending'. Please select 'Completed' or 'Cancelled'.", "error")
+            return redirect(url_for('edit_booking', booking_id=booking_id))
+
+        if status == 'cancelled' and current_booking['booking_status'] != 'cancelled' and current_booking['subscription_id']:
+            cursor.execute("""
+                UPDATE service_credits 
+                SET remaining_quantity = remaining_quantity + 1 
+                WHERE subscription_id = %s AND service_id = %s AND is_unlimited = 0
+            """, (current_booking['subscription_id'], current_booking['service_id']))
+
         # Handle "None" selection for worker
         if worker_id == 'none':
             worker_id = None
@@ -938,22 +1027,12 @@ def edit_booking(booking_id):
             except mysql.connector.Error:
                 pass
             
-            # Check for online payment to send refund notification to customer
-            cursor.execute("""
-                SELECT p.payment_method, c.email, c.cust_name 
-                FROM booking b
-                JOIN payment p ON b.booking_id = p.booking_id
-                JOIN customer c ON b.customer_id = c.customer_id
-                WHERE b.booking_id = %s
-            """, (booking_id,))
+            # Notify Customer of cancellation (Standard message)
+            cursor.execute("SELECT c.email, c.cust_name FROM booking b JOIN customer c ON b.customer_id = c.customer_id WHERE b.booking_id = %s", (booking_id,))
             details = cursor.fetchone()
-            if details and details['payment_method'] == 'online':
-                send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled by admin. As you have paid online, refunding will be done in few days.")
             if details:
-                msg_body = f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled by admin."
-                if details['payment_method'] == 'online':
-                    msg_body += " As you have paid online, refunding will be done in few days."
-                send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", msg_body)
+                send_notification_email(details['email'], f"Booking Cancelled - #{booking_id}", f"Hello {details['cust_name']},\n\nYour booking #{booking_id} has been cancelled by the admin.")
+
         conn.commit()
 
         # Send Notification to Customer if status is completed
@@ -988,8 +1067,8 @@ def edit_booking(booking_id):
 
     # Fetch booking details
     cursor.execute("""
-        SELECT b.booking_id, b.booking_date, b.booking_status, b.worker_id,
-               c.cust_name, s.service_name, p.payment_status, p.amount
+        SELECT b.booking_id, b.booking_date, b.booking_status, b.worker_id, b.subscription_id,
+               c.cust_name, s.service_name, p.payment_status, p.amount, p.payment_method
         FROM booking b
         JOIN customer c ON b.customer_id = c.customer_id
         JOIN service s ON b.service_id = s.service_id
@@ -1005,6 +1084,125 @@ def edit_booking(booking_id):
     cursor.close()
     conn.close()
     return render_template('edit_booking.html', booking=booking, workers=workers)
+
+@app.route('/admin/refund_message/<int:booking_id>')
+def refund_message(booking_id):
+    if 'loggedin' not in session or session['role'] != 'admin':
+        return redirect(url_for('login_page'))
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT c.email, c.cust_name 
+            FROM booking b 
+            JOIN customer c ON b.customer_id = c.customer_id 
+            WHERE b.booking_id = %s
+        """, (booking_id,))
+        details = cursor.fetchone()
+        
+        if details:
+            subject = f"Refund Update - Booking #{booking_id}"
+            body = f"Hello {details['cust_name']},\n\nyour refund will be done in few days"
+            if send_notification_email(details['email'], subject, body):
+                flash(f"Refund message sent to {details['cust_name']}.", 'success')
+                pass
+            else:
+                flash('Failed to send email.', 'error')
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        flash(f'Error: {e}', 'error')
+    
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/refund_pay/<int:booking_id>')
+def refund_pay(booking_id):
+    if 'loggedin' not in session or session['role'] != 'admin':
+        return redirect(url_for('login_page'))
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT c.email, c.cust_name 
+            FROM booking b 
+            JOIN customer c ON b.customer_id = c.customer_id 
+            WHERE b.booking_id = %s
+        """, (booking_id,))
+        details = cursor.fetchone()
+        
+        if details:
+            subject = f"Refund Credited - Booking #{booking_id}"
+            body = f"Hello {details['cust_name']},\n\nrefund credited to your account for the booking "
+            if send_notification_email(details['email'], subject, body):
+                cursor.execute("UPDATE payment SET payment_status = 'refunded' WHERE booking_id = %s", (booking_id,))
+                conn.commit()
+                flash(f"Payment refund confirmation sent to {details['cust_name']}.", 'success')
+            else:
+                flash('Failed to send email.', 'error')
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        flash(f'Error: {e}', 'error')
+    
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/cancel_subscription/<int:subscription_id>')
+def admin_cancel_subscription(subscription_id):
+    if 'loggedin' not in session or session['role'] != 'admin':
+        return redirect(url_for('login_page'))
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE customer_subscription SET status = 'cancelled' WHERE subscription_id = %s", (subscription_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        flash(f'Subscription #{subscription_id} has been cancelled.', 'info')
+    except Exception as e:
+        flash(f'Error cancelling subscription: {e}', 'error')
+    return redirect(url_for('admin_manage_subscriptions'))
+
+@app.route('/admin/subscription_credits/<int:subscription_id>')
+def admin_view_subscription_credits(subscription_id):
+    if 'loggedin' not in session or session['role'] != 'admin':
+        return redirect(url_for('login_page'))
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    # Fetch subscription info with customer and plan details
+    cursor.execute("""
+        SELECT cs.*, c.cust_name, sp.plan_name 
+        FROM customer_subscription cs
+        JOIN customer c ON cs.customer_id = c.customer_id
+        JOIN subscription_plan sp ON cs.plan_id = sp.plan_id
+        WHERE cs.subscription_id = %s
+    """, (subscription_id,))
+    subscription = cursor.fetchone()
+    
+    if not subscription:
+        flash("Subscription not found.", "error")
+        cursor.close()
+        conn.close()
+        return redirect(url_for('admin_manage_subscriptions'))
+        
+    # Fetch detailed credits for this subscription
+    cursor.execute("""
+        SELECT sc.*, s.service_name 
+        FROM service_credits sc
+        JOIN service s ON sc.service_id = s.service_id
+        WHERE sc.subscription_id = %s
+    """, (subscription_id,))
+    credits = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    return render_template('admin_view_credits.html', subscription=subscription, credits=credits)
 
 @app.route('/admin/delete_booking/<int:booking_id>')
 def delete_booking(booking_id):
@@ -1035,45 +1233,68 @@ def booking_form(service_id):
         return redirect(url_for('worker_dashboard'))
 
     now = datetime.now()
-    service = None
-    workers = []
+    conn = None
+    credits = None
+    region = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT service_id, service_name, category, service_type FROM service WHERE service_id = %s", (service_id,))
+        cursor = conn.cursor(dictionary=True) # Ensure cursor returns dictionaries
+        # Fetch service details while ensuring premium services are excluded as requested
+        cursor.execute("SELECT * FROM service WHERE service_id = %s AND service_type != 'premium'", (service_id,))
         service = cursor.fetchone()
-        
-        if service:
 
-            # Fetch all workers including 24/7 status
-            cursor.execute("SELECT worker_id, worker_name, rating as avg_rating, is_24_7 FROM worker ORDER BY rating DESC")
-            workers = cursor.fetchall()
+        if not service:
+            flash('Service not found or is currently unavailable.', 'error')
+            return redirect(url_for('dashboard'))
+
+        # Fetch all workers including 24/7 status for selection
+        cursor.execute("SELECT worker_id, worker_name, rating as avg_rating, is_24_7 FROM worker ORDER BY rating DESC")
+        workers = cursor.fetchall()
+
+        # Check workload availability to prevent worker overload (Max 4 pending jobs)
+        cursor.execute("""
+            SELECT b.worker_id, COUNT(*) as total
+            FROM booking b 
+            JOIN service s ON b.service_id = s.service_id
+            WHERE b.booking_status = 'pending'
+            GROUP BY b.worker_id
+        """)
+        workloads = {row['worker_id']: row for row in cursor.fetchall()}
+
+        for worker in workers:
+            load = workloads.get(worker['worker_id'], {'total': 0})
+            current_total = load['total']
             
-            # Check workload availability
+            # Ensure workload efficiency: limit to 4 jobs total
+            worker['is_available'] = current_total < 4
+            worker['status_msg'] = 'High Workload' if current_total >= 4 else None
+            
+        # Check for subscription credits
+        if session['role'] == 'customer':
+            cursor.execute("SELECT region FROM customer WHERE login_id = %s", (session['id'],))
+            cust_row = cursor.fetchone()
+            if cust_row:
+                region = cust_row['region']
+
             cursor.execute("""
-                SELECT b.worker_id, COUNT(*) as total, 
-                       SUM(CASE WHEN s.service_type = 'premium' THEN 1 ELSE 0 END) as premium_count
-                FROM booking b 
-                JOIN service s ON b.service_id = s.service_id
-                WHERE b.booking_status = 'pending'
-                GROUP BY b.worker_id
-            """)
-            workloads = {row['worker_id']: row for row in cursor.fetchall()}
+                SELECT sc.* 
+                FROM service_credits sc
+                JOIN customer_subscription cs ON sc.subscription_id = cs.subscription_id
+                WHERE cs.customer_id = (SELECT customer_id FROM customer WHERE login_id = %s) 
+                AND sc.service_id = %s AND cs.status = 'active' AND cs.end_date >= CURDATE()
+            """, (session['id'], service_id))
+            credits = cursor.fetchone()
 
-            for worker in workers:
-                load = workloads.get(worker['worker_id'], {'total': 0, 'premium_count': 0})
-                current_total = load['total']
-                current_premium = load['premium_count'] if load['premium_count'] else 0
-                
-                worker['is_available'] = current_total < 4 and not (service['service_type'] == 'premium' and current_premium >= 2)
-                worker['status_msg'] = 'High Workload' if current_total >= 4 else ('Premium Limit Reached' if not worker['is_available'] else '')
+        return render_template('booking_form.html', service=service, workers=workers, now=now, credits=credits, region=region)
 
-        cursor.close()
-        conn.close()
     except Exception as e:
         print(f"Error fetching service details: {e}")
-
-    return render_template('booking_form.html', service=service, workers=workers, now=now)
+        flash('An error occurred while loading the booking form. Please try again.', 'error')
+        return redirect(url_for('dashboard'))
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
 @app.route('/book_service', methods=['POST'])
 def book_service():
@@ -1099,113 +1320,224 @@ def book_service():
         flash('Service not found.', 'error')
         return redirect(url_for('home'))
 
-    # Check Urgency Mode (Validated against service type)
-    is_urgent = False
-    urgency_mode = request.form.get('urgency_mode')
-    if urgency_mode == '1' and service.get('service_type') == 'premium':
-        is_urgent = True
-        
-    urgency_multiplier = 1.5 if is_urgent else 1.0
+    # Emergency logic: 24/7 worker assignment, immediate time, and online payment
+    is_emergency = service.get('service_type') == 'emergency'
+    is_laundry = 'laundry' in service.get('service_name', '').lower()
+    urgency_multiplier = 1.0 
+    
+    subscription_id = None
 
     # Get the selected worker_id (if any)
     worker_id = request.form.get('worker_id')
+    candidates = []  # Initialize to prevent UnboundLocalError
+
+    # For emergency services, user can choose to use subscription credits
+    if is_emergency:
+        use_subscription = request.form.get('use_subscription') == '1'
+        if use_subscription:
+            cursor.execute("""
+                SELECT sc.credit_id, sc.subscription_id, sc.remaining_quantity, sc.is_unlimited
+                FROM service_credits sc
+                JOIN customer_subscription cs ON sc.subscription_id = cs.subscription_id
+                WHERE cs.customer_id = (SELECT customer_id FROM customer WHERE login_id = %s)
+                AND sc.service_id = %s AND cs.status = 'active' AND cs.end_date >= CURDATE()
+                AND (sc.remaining_quantity > 0 OR sc.is_unlimited = 1)
+            """, (login_id, service_id))
+            credit_record = cursor.fetchone()
+            
+            if credit_record:
+                subscription_id = credit_record['subscription_id']
+                if not credit_record['is_unlimited']:
+                    cursor.execute("UPDATE service_credits SET remaining_quantity = remaining_quantity - 1 WHERE credit_id = %s", 
+                                   (credit_record['credit_id'],))
+            else:
+                flash('No subscription credits available for this service. Booking will proceed with regular billing.', 'warning')
+                subscription_id = None
+    else:
+        # For regular services, user choice
+        use_subscription = request.form.get('use_subscription') == '1'
+        if use_subscription:
+            cursor.execute("""
+                SELECT sc.credit_id, sc.subscription_id, sc.remaining_quantity, sc.is_unlimited
+                FROM service_credits sc
+                JOIN customer_subscription cs ON sc.subscription_id = cs.subscription_id
+                WHERE cs.customer_id = (SELECT customer_id FROM customer WHERE login_id = %s)
+                AND sc.service_id = %s AND cs.status = 'active' AND cs.end_date >= CURDATE()
+                AND (sc.remaining_quantity > 0 OR sc.is_unlimited = 1)
+            """, (login_id, service_id))
+            credit_record = cursor.fetchone()
+            
+            if credit_record:
+                subscription_id = credit_record['subscription_id']
+                if not credit_record['is_unlimited']:
+                    cursor.execute("UPDATE service_credits SET remaining_quantity = remaining_quantity - 1 WHERE credit_id = %s", 
+                                   (credit_record['credit_id'],))
+            else:
+                flash('No subscription credits available for this service. Booking will proceed with regular billing.', 'warning')
+                subscription_id = None
+                use_subscription = False
+
+    # Set booking_date and booking_time for worker check
+    if is_emergency:
+        booking_date = datetime.now().date()
+        booking_time = datetime.now().replace(microsecond=0).time()
+    else:
+        booking_date = request.form.get('booking_date')
+        booking_time = request.form.get('booking_time')
+        
+        if not booking_date or not booking_time:
+            flash('Please select a valid date and time.', 'error')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('booking_form', service_id=service_id))
     
-    # Override for Urgency Mode: Force random assignment
-    if is_urgent:
-        worker_id = 'none'
-    
-    # 1.5. Validate Specific Worker Availability (Re-check workload on submission)
+    # Worker Assignment Logic
     if worker_id and worker_id != 'none':
+        # Check if the selected worker has another booking on the chosen date
         cursor.execute("""
-            SELECT COUNT(*) as total, 
-                   SUM(CASE WHEN s.service_type = 'premium' THEN 1 ELSE 0 END) as premium_count
-            FROM booking b 
-            JOIN service s ON b.service_id = s.service_id
+            SELECT 1 FROM booking
+            WHERE worker_id = %s
+            AND booking_date = %s
+            AND booking_status NOT IN ('completed', 'cancelled')
+        """, (worker_id, booking_date))
+        if cursor.fetchone():
+            flash('The selected worker is already assigned to another job on the chosen date. Please choose a different worker or select "No Preference".', 'error')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('booking_form', service_id=service_id))
+        
+        # Check if the selected worker is overloaded
+        cursor.execute("""
+            SELECT COUNT(b.booking_id) as total
+            FROM booking b
             WHERE b.worker_id = %s AND b.booking_status = 'pending'
         """, (worker_id,))
         stats = cursor.fetchone()
         
         current_total = stats['total']
-        current_premium = stats['premium_count'] if stats['premium_count'] else 0
         
-        if current_total >= 4 or (service['service_type'] == 'premium' and current_premium >= 2):
+        if current_total >= 4:
             flash('The selected worker has just reached their workload limit. Please choose another or select "No Preference".', 'error')
             cursor.close()
             conn.close()
             return redirect(url_for('booking_form', service_id=service_id))
 
     if worker_id == 'none' or not worker_id:
-        # Randomly assign a worker who is NOT overloaded
-        query = """
-            SELECT w.worker_id, w.is_24_7, COUNT(b.booking_id) as total,
-                   SUM(CASE WHEN s.service_type = 'premium' AND b.booking_status = 'pending' THEN 1 ELSE 0 END) as premium_count
-            FROM worker w
-            LEFT JOIN booking b ON w.worker_id = b.worker_id AND b.booking_status = 'pending'
-            LEFT JOIN service s ON b.service_id = s.service_id
-            WHERE 1=1
-        """
-        if is_urgent:
-            query += " AND w.is_24_7 = 1 "
-            
-        query += " GROUP BY w.worker_id"
-        cursor.execute(query)
-        all_stats = cursor.fetchall()
-        
-        # Filter available workers based on constraints
-        candidates = []
-        for stat in all_stats:
-            p_count = stat['premium_count'] if stat['premium_count'] else 0
-            if stat['total'] < 4:
-                if service['service_type'] != 'premium' or p_count < 2:
-                    candidates.append(stat['worker_id'])
-        
-        if candidates:
-            worker_id = random.choice(candidates)
+        # Randomly assign a worker who is available on the date/time and not overloaded
+        if is_emergency:
+            cursor.execute("""
+                SELECT worker_id FROM worker 
+                WHERE is_24_7 = 1 
+                AND NOT EXISTS (
+                    SELECT 1 FROM booking 
+                    WHERE worker_id = worker.worker_id 
+                    AND booking_date = CURDATE() 
+                    AND booking_status NOT IN ('completed', 'cancelled')
+                )
+                AND (SELECT COUNT(*) FROM booking WHERE worker_id = worker.worker_id AND booking_status = 'pending') < 4 
+                ORDER BY rating DESC LIMIT 1
+            """)
+            worker_row = cursor.fetchone()
+            if worker_row:
+                worker_id = worker_row['worker_id']
+            else:
+                flash('No 24/7 workers are currently available due to high demand.', 'error')
+                cursor.close()
+                conn.close()
+                return redirect(url_for('booking_form', service_id=service_id))
         else:
-            msg = 'No 24/7 workers are currently available due to high demand.' if is_urgent else 'All workers are currently fully booked. Please try again later.'
-            flash(msg, 'error')
-            cursor.close()
-            conn.close()
-            return redirect(url_for('booking_form', service_id=service_id))
+            cursor.execute("""
+                SELECT w.worker_id 
+                FROM worker w 
+                JOIN provides p ON w.worker_id = p.worker_id 
+                LEFT JOIN (SELECT worker_id, COUNT(*) as total FROM booking WHERE booking_status = 'pending' GROUP BY worker_id) b ON w.worker_id = b.worker_id
+                WHERE p.service_id = %s 
+                AND (b.total IS NULL OR b.total < 4)
+                AND NOT EXISTS (
+                    SELECT 1 FROM booking b2 
+                    WHERE b2.worker_id = w.worker_id 
+                    AND b2.booking_date = %s 
+                    AND b2.booking_status NOT IN ('completed', 'cancelled')
+                )
+            """, (service_id, booking_date, booking_time, booking_time, booking_time, booking_time))
+            for row in cursor.fetchall():
+                candidates.append(row['worker_id'])
+            
+            if candidates:
+                worker_id = random.choice(candidates)
+            else:
+                flash('All workers are currently fully booked at the selected time on that date. Please try a different time or date.', 'error')
+                cursor.close()
+                conn.close()
+                return redirect(url_for('booking_form', service_id=service_id))
 
     # 2. Fetch Customer Details
     cursor.execute("SELECT customer_id, region, email, cust_name FROM customer WHERE login_id = %s", (login_id,))
     customer = cursor.fetchone()
 
     if customer and service:
-        if is_urgent:
-            booking_date = datetime.now().date()
-            booking_time = datetime.now().replace(microsecond=0).time()
-        elif service.get('service_type') == 'premium':
-            booking_date = request.form.get('booking_date')
-            booking_time = request.form.get('booking_time')
+        # Time restriction for Regular Services: 9 AM to 6 PM
+        if service.get('service_type') == 'regular' and not is_emergency:
+            try:
+                # Convert booking_time to time object if it's a string
+                if isinstance(booking_time, str):
+                    fmt = '%H:%M:%S' if len(booking_time.split(':')) == 3 else '%H:%M'
+                    selected_time = datetime.strptime(booking_time, fmt).time()
+                else:
+                    selected_time = booking_time
+                    
+                # Convert booking_date to date object if it's a string
+                if isinstance(booking_date, str):
+                    selected_date = datetime.strptime(booking_date, '%Y-%m-%d').date()
+                else:
+                    selected_date = booking_date
+                    
+                now = datetime.now()
+                start_limit = datetime.strptime('09:00', '%H:%M').time()
+                end_limit = datetime.strptime('18:00', '%H:%M').time()
 
-            if not booking_date or not booking_time:
-                flash('Please select a valid date and time for premium services.', 'error')
+                if selected_time < start_limit or selected_time > end_limit:
+                    flash('Regular services can only be booked between 9:00 AM and 6:00 PM.', 'error')
+                    cursor.close()
+                    conn.close()
+                    return redirect(url_for('booking_form', service_id=service_id))
+
+                # Check if booking for today and the time has already passed
+                if selected_date == now.date() and selected_time < now.time():
+                    flash('For same-day bookings, please select a time in the future.', 'error')
+                    cursor.close()
+                    conn.close()
+                    return redirect(url_for('booking_form', service_id=service_id))
+            except ValueError:
+                flash('Invalid time format selected. Please use the time picker.', 'error')
                 cursor.close()
                 conn.close()
                 return redirect(url_for('booking_form', service_id=service_id))
-        else:
-            booking_date = datetime.now().date()
-            booking_time = datetime.now().replace(microsecond=0).time()
 
         customer_id = customer['customer_id']
         
         # Schema only supports pending/completed/cancelled
         initial_status = 'pending'
         
-        # Determine payment method based on urgency
-        if is_urgent:
+        # Determine payment method
+        if is_emergency or subscription_id:
             payment_method = 'online'
         else:
             payment_method = request.form.get('payment_method', 'cash')
 
-        cursor.execute("INSERT INTO booking (booking_date, booking_time, booking_status, customer_id, service_id, worker_id) VALUES (%s, %s, %s, %s, %s, %s)", 
-                       (booking_date, booking_time, initial_status, customer_id, service_id, worker_id))
+        cursor.execute("INSERT INTO booking (booking_date, booking_time, booking_status, customer_id, service_id, worker_id, subscription_id) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
+                       (booking_date, booking_time, initial_status, customer_id, service_id, worker_id, subscription_id))
         booking_id = cursor.lastrowid
 
         # Handle Payment Entry
-        amount = float(service['price']) * urgency_multiplier
+        base_rate = float(service['price'])
+        units = 1.0
+        if any(keyword in service['service_name'] for keyword in ['Cleaning', 'Plumbing', 'Electric', 'Gardening', 'Repair', 'Maintenance']):
+            units = float(request.form.get('hours', 1))
+        elif 'Laundry' in service['service_name']:
+            units = float(request.form.get('weight', 1))
+            
+        amount = base_rate * units * urgency_multiplier
         
         # Add delivery charge if applicable
         delivery_charge = 0
@@ -1213,17 +1545,43 @@ def book_service():
             pickup_distance = float(request.form.get('pickup_distance', 0))
             delivery_charge += max(0, (pickup_distance - 5) * 20)
         
-        total_amount = amount + delivery_charge
+        if subscription_id:
+            total_amount = 0.00
+            payment_status = 'completed'
+        elif is_emergency:
+            # Emergency services pay a flat ₹100 advance upfront
+            total_amount = 100.00
+            payment_status = 'pending'
+        else:
+            # Regular service: Amount decided after service by worker metrics
+            total_amount = 0.00
+            payment_status = 'pending'
 
-        # Insert into payment table (status is pending initially)
-        cursor.execute("INSERT INTO payment (amount, payment_status, payment_method, booking_id) VALUES (%s, 'pending', %s, %s)",
-                       (total_amount, payment_method, booking_id))
+        # Insert into payment table
+        cursor.execute("INSERT INTO payment (amount, payment_status, payment_method, booking_id, subscription_id) VALUES (%s, %s, %s, %s, %s)",
+                       (total_amount, payment_status, payment_method, booking_id, subscription_id))
         
         conn.commit()
         
         # Send Booking Confirmation Email (for Cash payments or initial booking state)
+        email_subject = f"EMERGENCY Booking Confirmed - #{booking_id}" if is_emergency else f"Booking Confirmed - #{booking_id}"
+        
         if customer.get('email'):
-            send_notification_email(customer['email'], f"Booking Confirmed - #{booking_id}", f"Hello {customer['cust_name']},\n\nYour booking for {service['service_name']} has been placed successfully.\nBooking ID: {booking_id}\nDate: {booking_date}\nTime: {booking_time}\n\nThank you for choosing My Eazy Day.")
+            email_body = f"Hello {customer['cust_name']},\n\nYour {'EMERGENCY ' if is_emergency else ''}booking for {service['service_name']} has been placed successfully.\nBooking ID: {booking_id}\nDate: {booking_date}\nTime: {booking_time}\nTotal Amount: ₹{total_amount}\n\n"
+            
+            if is_laundry:
+                # Regional Laundry Schedule
+                schedules = {
+                    'North': 'Mondays and Fridays',
+                    'South': 'Tuesdays and Saturdays',
+                    'East': 'Wednesdays',
+                    'West': 'Thursdays'
+                }
+                pickup_days = schedules.get(customer['region'], 'scheduled days')
+                email_body += f"Note for Laundry Service: Based on your region ({customer['region']}), our pickup team visits on {pickup_days}. Please ensure your laundry is ready for collection on the next available day.\n\n"
+            
+            email_body += "Thank you for choosing My Eazy Day."
+            send_notification_email(customer['email'], email_subject, email_body)
 
         # Send Notification to Worker
         if worker_id:
@@ -1236,8 +1594,13 @@ def book_service():
                     f"Hello {worker_data['worker_name']},\n\nYou have been assigned a new job.\nService: {service['service_name']}\nDate: {booking_date}\nTime: {booking_time}\n\nPlease check your dashboard for details."
                 )
 
-        # If online payment is selected, redirect to payment page
-        if payment_method == 'online':
+        if use_subscription:
+            cursor.close()
+            conn.close()
+            return redirect(url_for('my_bookings'))
+
+        # Only redirect to payment simulator for emergency online bookings at time of order
+        if is_emergency and payment_method == 'online':
             cursor.close()
             conn.close()
             return redirect(url_for('payment_page', booking_id=booking_id))
@@ -1327,7 +1690,21 @@ def process_payment_simulation():
         if result['status'] == 'completed':
             # Payment successful
             cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE booking_id = %s", (booking_id,))
-            # Schema limitation: booking_status stays 'pending' until worker completes it
+            
+            # Mark booking as completed for regular services OR emergency balance payments (non-deposit)
+            cursor.execute("""
+                SELECT s.service_type, p.amount, b.booking_status
+                FROM booking b 
+                JOIN service s ON b.service_id = s.service_id 
+                JOIN payment p ON b.booking_id = p.booking_id
+                WHERE b.booking_id = %s
+            """, (booking_id,))
+            info = cursor.fetchone()
+            
+            # For emergency: only mark complete if this isn't the initial deposit (detected by amount != 100)
+            if info['service_type'] == 'regular' or (info['service_type'] == 'emergency' and float(info['amount']) != 100.0):
+                cursor.execute("UPDATE booking SET booking_status = 'completed' WHERE booking_id = %s", (booking_id,))
+            
             conn.commit()
             
             # Notify Customer of successful payment
@@ -1381,6 +1758,7 @@ def my_bookings():
         cursor.execute("""
             SELECT b.booking_id, s.service_name, b.booking_date, b.booking_time, b.booking_status, w.worker_name,
                    p.payment_status, p.payment_method, p.amount,
+                   b.subscription_id as is_subscription,
                    f.rating
             FROM booking b
             JOIN service s ON b.service_id = s.service_id
@@ -1496,7 +1874,7 @@ def customer_edit_profile():
             
             cursor.execute("""
                 INSERT INTO otp_store (email, otp, purpose, expires_at)
-                VALUES (%s, %s, 'login', %s)
+                VALUES (%s, %s, 'email_change', %s)
                 ON DUPLICATE KEY UPDATE otp = VALUES(otp), expires_at = VALUES(expires_at)
             """, (email, otp, expires_at))
             conn.commit()
@@ -1545,7 +1923,7 @@ def verify_profile_email_change():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute("SELECT * FROM otp_store WHERE email = %s AND otp = %s AND purpose = 'login'", (new_email, otp))
+        cursor.execute("SELECT * FROM otp_store WHERE email = %s AND otp = %s AND purpose = 'email_change'", (new_email, otp))
         otp_record = cursor.fetchone()
 
         if otp_record and datetime.now() < otp_record['expires_at']:
@@ -1561,7 +1939,7 @@ def verify_profile_email_change():
                 cursor.execute("UPDATE login SET username=%s WHERE login_id=%s", (new_data['username'], login_id))
 
             # Cleanup
-            cursor.execute("DELETE FROM otp_store WHERE email = %s AND purpose = 'login'", (new_email,))
+            cursor.execute("DELETE FROM otp_store WHERE email = %s AND purpose = 'email_change'", (new_email,))
             conn.commit()
             
             session['username'] = new_data['username']
@@ -1589,7 +1967,7 @@ def resend_profile_email_otp():
         conn = get_db_connection()
         cursor = conn.cursor()
         expires_at = datetime.now() + timedelta(minutes=10)
-        cursor.execute("UPDATE otp_store SET otp = %s, expires_at = %s WHERE email = %s AND purpose = 'login'", 
+        cursor.execute("UPDATE otp_store SET otp = %s, expires_at = %s WHERE email = %s AND purpose = 'email_change'", 
                        (otp, expires_at, email))
         conn.commit()
         cursor.close()
@@ -1611,8 +1989,20 @@ def feedback(booking_id):
     # Check if feedback already exists for this booking
     cursor.execute("SELECT feedback_id FROM feedback WHERE booking_id = %s", (booking_id,))
     existing_feedback = cursor.fetchone()
+    # Security check: Ensure booking belongs to user, is completed, and hasn't been rated
+    cursor.execute("""
+        SELECT b.booking_id FROM booking b
+        LEFT JOIN feedback f ON b.booking_id = f.booking_id
+        WHERE b.booking_id = %s 
+        AND b.customer_id = (SELECT customer_id FROM customer WHERE login_id = %s)
+        AND b.booking_status = 'completed'
+        AND f.feedback_id IS NULL
+    """, (booking_id, session['id']))
+    
+    valid_booking = cursor.fetchone()
 
-    if existing_feedback:
+    if not valid_booking:
+        flash("You are not authorized to rate this booking or it has already been rated.", "error")
         cursor.close()
         conn.close()
         return redirect(url_for('my_bookings'))
@@ -1830,6 +2220,39 @@ def manage_workers():
     conn.close()
     return render_template('manage_workers.html', workers=workers)
 
+@app.route('/admin/manage_subscriptions')
+def admin_manage_subscriptions():
+    if 'loggedin' not in session or session['role'] != 'admin':
+        return redirect(url_for('login_page'))
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT cs.subscription_id, c.cust_name, sp.plan_name, cs.start_date, cs.end_date, cs.status
+        FROM customer_subscription cs
+        JOIN customer c ON cs.customer_id = c.customer_id
+        JOIN subscription_plan sp ON cs.plan_id = sp.plan_id
+        ORDER BY cs.start_date DESC
+    """)
+    subscriptions = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('manage_subscriptions.html', subscriptions=subscriptions)
+
+@app.route('/admin/delete_subscription/<int:subscription_id>')
+def delete_subscription(subscription_id):
+    if 'loggedin' not in session or session['role'] != 'admin':
+        return redirect(url_for('login_page'))
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM customer_subscription WHERE subscription_id = %s", (subscription_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    flash(f"Subscription #{subscription_id} deleted successfully.", "success")
+    return redirect(url_for('admin_manage_subscriptions'))
+
 @app.route('/logout')
 def logout():
     session.pop('loggedin', None)
@@ -1838,38 +2261,311 @@ def logout():
     session.pop('role', None)
     return redirect(url_for('home'))
 
+@app.route('/subscription/plans')
+def subscription_plans():
+    if 'loggedin' not in session or session['role'] != 'customer':
+        return redirect(url_for('login_page', next=url_for('subscription_plans')))
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM subscription_plan")
+    plans = cursor.fetchall()
+
+    # Fetch current active or pending subscription
+    cursor.execute("""
+        SELECT cs.plan_id, cs.status, cs.subscription_id
+        FROM customer_subscription cs
+        WHERE cs.customer_id = (SELECT customer_id FROM customer WHERE login_id = %s)
+        AND cs.status IN ('active', 'pending') AND cs.end_date >= CURDATE()
+        ORDER BY cs.subscription_id DESC LIMIT 1
+    """, (session['id'],))
+    current_sub = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+    return render_template('subscription_plans.html', plans=plans, current_sub=current_sub)
+
+@app.route('/subscription/buy/<int:plan_id>', methods=['POST'])
+def buy_subscription(plan_id):
+    if 'loggedin' not in session or session['role'] != 'customer':
+        return redirect(url_for('login_page'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("SELECT * FROM subscription_plan WHERE plan_id = %s", (plan_id,))
+        plan = cursor.fetchone()
+        if not plan:
+            flash("Plan not found.", "error")
+            return redirect(url_for('dashboard'))
+
+        cursor.execute("SELECT customer_id FROM customer WHERE login_id = %s", (session['id'],))
+        customer = cursor.fetchone()
+        customer_id = customer['customer_id']
+
+        # Strict One-Subscription Policy: Physically remove any existing membership 
+        # (Active, Pending, or Expired) from the database immediately.
+        # This ensures the customer can only proceed with one subscription at a time.
+        cursor.execute("DELETE FROM customer_subscription WHERE customer_id = %s", (customer_id,))
+        amount_to_pay = plan['price']
+
+        start_date = datetime.now().date()
+        end_date = start_date + timedelta(days=plan['duration_months'] * 30)
+        
+        cursor.execute("""
+            INSERT INTO customer_subscription (customer_id, plan_id, start_date, end_date, status)
+            VALUES (%s, %s, %s, %s, 'pending')
+        """, (customer_id, plan_id, start_date, end_date))
+        subscription_id = cursor.lastrowid
+
+        # Create a pending payment record for the subscription
+        cursor.execute("""
+            INSERT INTO payment (amount, payment_status, payment_method, subscription_id)
+            VALUES (%s, 'pending', 'online', %s)
+        """, (amount_to_pay, subscription_id))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return redirect(url_for('subscription_payment_simulation', subscription_id=subscription_id))
+
+    except Exception as e:
+        print(f"Error buying subscription: {e}")
+        conn.rollback()
+        flash("An error occurred while purchasing the subscription.", "error")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    return redirect(url_for('dashboard'))
+
+@app.route('/customer/cancel_subscription/<int:subscription_id>', methods=['GET'])
+def customer_cancel_subscription(subscription_id):
+    if 'loggedin' not in session or session['role'] != 'customer':
+        return redirect(url_for('login_page'))
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify ownership to ensure a customer can only cancel their own subscription
+        cursor.execute("""
+            SELECT subscription_id FROM customer_subscription 
+            WHERE subscription_id = %s AND customer_id = (SELECT customer_id FROM customer WHERE login_id = %s)
+        """, (subscription_id, session['id']))
+        
+        if cursor.fetchone():
+            # Delete feedback tied to bookings for the subscription to avoid FK constraint failure
+            cursor.execute("""
+                DELETE f
+                FROM feedback f
+                JOIN booking b ON f.booking_id = b.booking_id
+                WHERE b.subscription_id = %s
+            """, (subscription_id,))
+
+            # Delete payment records tied to these bookings (safe cleanup)
+            cursor.execute("""
+                DELETE p
+                FROM payment p
+                JOIN booking b ON p.booking_id = b.booking_id
+                WHERE b.subscription_id = %s
+            """, (subscription_id,))
+
+            # Delete the subscription; this cascades to booking (and service_credits/payment by subscription_id)
+            cursor.execute("DELETE FROM customer_subscription WHERE subscription_id = %s", (subscription_id,))
+            conn.commit()
+            flash('Your membership has been successfully cancelled and related booking records were removed.', 'info')
+        else:
+            flash('Subscription not found or unauthorized.', 'error')
+            
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        flash(f'Error cancelling subscription: {e}', 'error')
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/subscription/payment_simulation/<int:subscription_id>')
+def subscription_payment_simulation(subscription_id):
+    if 'loggedin' not in session:
+        return redirect(url_for('login_page'))
+        
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT cs.subscription_id, sp.plan_name, p.amount
+        FROM customer_subscription cs
+        JOIN subscription_plan sp ON cs.plan_id = sp.plan_id
+        JOIN payment p ON cs.subscription_id = p.subscription_id
+        WHERE cs.subscription_id = %s
+    """, (subscription_id,))
+    subscription = cursor.fetchone()
+    
+    cursor.close()
+    conn.close()
+    
+    if not subscription:
+        flash('Subscription request not found', 'error')
+        return redirect(url_for('dashboard'))
+    
+    return render_template('subscription_payment_simulation.html', 
+                         subscription_id=subscription['subscription_id'],
+                         plan_name=subscription['plan_name'],
+                         amount=subscription['amount'])
+
+@app.route('/process_subscription_payment_simulation', methods=['POST'])
+def process_subscription_payment_simulation():
+    if 'loggedin' not in session:
+        return redirect(url_for('login_page'))
+        
+    subscription_id = int(request.form['subscription_id'])
+    scenario = request.form['scenario']
+    amount = float(request.form['amount'])
+    
+    result = PaymentSimulator.simulate_payment_scenario(scenario, subscription_id, amount)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        if result['status'] == 'completed':
+            # 1. Update Payment
+            cursor.execute("UPDATE payment SET payment_status = 'completed' WHERE subscription_id = %s", (subscription_id,))
+            
+            # 2. Activate Subscription
+            cursor.execute("UPDATE customer_subscription SET status = 'active' WHERE subscription_id = %s", (subscription_id,))
+            
+            # Final Cleanup: Ensure any stray memberships are removed.
+            # This enforces that the customer_subscription table only ever holds one record per user.
+            cursor.execute("SELECT customer_id FROM customer_subscription WHERE subscription_id = %s", (subscription_id,))
+            cust_row = cursor.fetchone()
+            if cust_row:
+                cursor.execute("DELETE FROM customer_subscription WHERE customer_id = %s AND subscription_id <> %s", 
+                               (cust_row['customer_id'], subscription_id))
+
+            # 3. Populate Service Credits
+            cursor.execute("""
+                SELECT sb.* 
+                FROM subscription_benefit sb
+                JOIN customer_subscription cs ON sb.plan_id = cs.plan_id
+                WHERE cs.subscription_id = %s
+            """, (subscription_id,))
+            benefits = cursor.fetchall()
+            
+            for b in benefits:
+                cursor.execute("""
+                    INSERT INTO service_credits (subscription_id, service_id, remaining_quantity, is_unlimited)
+                    VALUES (%s, %s, %s, %s)
+                """, (subscription_id, b['service_id'], b['quantity'], b['is_unlimited']))
+            
+            conn.commit()
+            
+            # Notify Customer
+            cursor.execute("""
+                SELECT c.email, c.cust_name, sp.plan_name 
+                FROM customer_subscription cs 
+                JOIN customer c ON cs.customer_id = c.customer_id 
+                JOIN subscription_plan sp ON cs.plan_id = sp.plan_id
+                WHERE cs.subscription_id = %s
+            """, (subscription_id,))
+            details = cursor.fetchone()
+            if details:
+                send_notification_email(details['email'], "Membership Activated", 
+                                     f"Hello {details['cust_name']},\n\nYour payment of ₹{amount} for the {details['plan_name']} was successful. Your membership is now active!")
+
+            return render_template('subscription_payment_result.html', status='success', message=result['message'])
+            
+        elif result['status'] in ['failed', 'timeout']:
+            # Clean up pending records on failure
+            cursor.execute("DELETE FROM payment WHERE subscription_id = %s", (subscription_id,))
+            cursor.execute("DELETE FROM customer_subscription WHERE subscription_id = %s", (subscription_id,))
+            conn.commit()
+            return render_template('subscription_payment_result.html', status='failed', message=result['message'])
+            
+        elif result['status'] == 'processing':
+            return render_template('subscription_payment_result.html', status='info', message=result['message'])
+            
+        else:
+            return render_template('subscription_payment_result.html', status='failed', message='Invalid payment scenario')
+            
+    except Exception as e:
+        print(f"Subscription payment simulation error: {e}")
+        conn.rollback()
+        return render_template('subscription_payment_result.html', status='failed', message='An error occurred during payment processing.')
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.route('/setup')
 def setup():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # --- Idempotent Service Setup ---
+        # --- 1. Core Service Setup (Must be first for benefits to link) ---
         all_services = {
-            # Name: (Category, Price, Service_Type)
-            'Laundry & Ironing': ('pickup', 250.00, 'regular'),
-            'Plumbing Repair': ('onsite', 450.00, 'regular'),
-            'Electrical Maintenance': ('onsite', 450.00, 'regular'),
-            'Emergency Electric Works': ('onsite', 900.00, 'premium'),
-            'Emergency Plumbing Works': ('onsite', 900.00, 'premium'),
-            'Full House Cleaning': ('onsite', 1500.00, 'premium'),
-            'Gardening': ('onsite', 800.00, 'premium')
+            'Laundry & Ironing': ('pickup', 100.00, 'regular'),
+            'Plumbing Repair': ('onsite', 100.00, 'regular'),
+            'Electrical Maintenance': ('onsite', 100.00, 'regular'),
+            'Emergency Electric Works': ('onsite', 100.00, 'emergency'),
+            'Emergency Plumbing Works': ('onsite', 100.00, 'emergency'),
+            'Full House Cleaning': ('onsite', 200.00, 'regular'),
+            'Gardening': ('onsite', 200.00, 'regular')
         }
 
-        cursor.execute("SELECT service_name FROM service")
-        existing_services = {row['service_name'] for row in cursor.fetchall()}
-        
-        new_services_to_add = []
         for name, details in all_services.items():
-            if name not in existing_services:
-                new_services_to_add.append((name, details[0], details[1], details[2]))
+            cursor.execute("SELECT service_id FROM service WHERE service_name = %s", (name,))
+            if not cursor.fetchone():
+                cursor.execute("INSERT INTO service (service_name, category, price, service_type) VALUES (%s, %s, %s, %s)", 
+                               (name, details[0], details[1], details[2]))
+            else:
+                cursor.execute("UPDATE service SET price = %s, service_type = %s WHERE service_name = %s", (details[1], details[2], name))
 
-        if new_services_to_add:
-            cursor.executemany("INSERT INTO service (service_name, category, price, service_type) VALUES (%s, %s, %s, %s)", new_services_to_add)
-            msg = f"{len(new_services_to_add)} new services added successfully! "
-        else:
-            msg = "All services already exist. "
+        # --- 2. Subscription Plan Setup ---
+        plans = [
+            {
+                'name': '3-Month Basic Membership',
+                'price': 1000.00,
+                'desc': 'Includes 4 Laundry sessions and 1 Emergency Plumbing session.',
+                'benefits': [('Laundry & Ironing', 4, False), ('Emergency Plumbing Works', 1, False)]
+            },
+            {
+                'name': '3-Month Premium Membership',
+                'price': 6000.00,
+                'desc': 'Includes 12 Laundry sessions, 1 House Cleaning, 1 Gardening, and 3 Emergency Plumbing/Electric sessions.',
+                'benefits': [
+                    ('Laundry & Ironing', 12, False),
+                    ('Full House Cleaning', 1, False),
+                    ('Gardening', 1, False),
+                    ('Emergency Electric Works', 3, False),
+                    ('Emergency Plumbing Works', 3, False)
+                ]
+            }
+        ]
 
+        for p in plans:
+            cursor.execute("SELECT plan_id FROM subscription_plan WHERE plan_name = %s", (p['name'],))
+            plan_exists = cursor.fetchone()
+            
+            if not plan_exists:
+                cursor.execute("""
+                    INSERT INTO subscription_plan (plan_name, price, duration_months, description) 
+                    VALUES (%s, %s, %s, %s)
+                """, (p['name'], p['price'], 3, p['desc']))
+                plan_id = cursor.lastrowid
+                
+                for s_name, qty, unlimited in p['benefits']:
+                    cursor.execute("SELECT service_id FROM service WHERE service_name = %s", (s_name,))
+                    svc = cursor.fetchone()
+                    if svc:
+                        cursor.execute("""
+                            INSERT INTO subscription_benefit (plan_id, service_id, quantity, is_unlimited)
+                            VALUES (%s, %s, %s, %s)
+                        """, (plan_id, svc['service_id'], qty, unlimited))
+
+        msg = "Service prices, subscription plans and benefits updated successfully! "
 
         conn.commit()
         cursor.close()
@@ -1884,7 +2580,7 @@ def service_details(service_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM service WHERE service_id = %s", (service_id,))
+        cursor.execute("SELECT * FROM service WHERE service_id = %s AND service_type != 'premium'", (service_id,))
         service = cursor.fetchone()
         cursor.close()
         conn.close()

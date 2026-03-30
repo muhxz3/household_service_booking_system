@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Plans - My Eazy Day</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="logo">My Eazy Day</div>
+        <div class="nav-links">
+            <a href="/dashboard">Home</a>
+            <a href="/my_bookings">My Bookings</a>
+            <a href="{{ url_for('customer_profile') }}">Profile</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="dashboard-container">
+        <div class="welcome-section">
+            <h1>Choose Your Membership</h1>
+            <p>Upgrade to a premium plan to enjoy exclusive benefits and savings on essential home services.</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert-{{ 'error' if category == 'error' else 'info' }}" style="text-align: center; margin-bottom: 20px; padding: 10px; border-radius: 5px;">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Plans Grid -->
+        <div class="services-grid">
+            {% for plan in plans %}
+            <div class="service-card premium-card" style="border: 2px solid var(--primary-color);">
+                <div class="service-icon">💎</div>
+                <div class="premium-badge">Most Popular</div>
+                <h3>{{ plan.plan_name }}</h3>
+                <div class="amount-display" style="font-size: 2rem; color: var(--primary-color); margin: 15px 0;">
+                    ₹{{ "%.2f"|format(plan.price) }}
+                </div>
+                <p style="font-weight: bold; color: var(--text-light);">Valid for {{ plan.duration_months }} Months</p>
+                
+                <div class="plan-details" style="text-align: left; margin: 20px 0; min-height: 100px;">
+                    <p>{{ plan.description }}</p>
+                </div>
+
+                <form action="{{ url_for('buy_subscription', plan_id=plan.plan_id) }}" method="POST">
+                    {% if current_sub %}
+                        {% if current_sub.status == 'active' %}
+                            {% if plan.plan_id == current_sub.plan_id %}
+                                <button type="button" class="btn" disabled style="background-color: #6c757d; cursor: default;">Current Plan</button>
+                            {% else %}
+                                <button type="submit" class="btn btn-premium" onclick="return confirm('Note: Purchasing this will replace your current membership. Continue?')">Subscribe Now</button>
+                            {% endif %}
+                        {% else %}
+                            {# Pending status #}
+                            {% if plan.plan_id == current_sub.plan_id %}
+                                <a href="{{ url_for('subscription_payment_simulation', subscription_id=current_sub.subscription_id) }}" class="btn" style="background-color: #f39c12;">Finish Payment</a>
+                            {% else %}
+                                <button type="submit" class="btn btn-premium" onclick="return confirm('Note: Purchasing this will replace your current membership. Continue?')">Subscribe Now</button>
+                            {% endif %}
+                        {% endif %}
+                    {% else %}
+                        <button type="submit" class="btn btn-premium">Subscribe Now</button>
+                    {% endif %}
+                </form>
+            </div>
+            {% else %}
+            <div style="text-align: center; width: 100%;">
+                <p>No subscription plans available at the moment.</p>
+                <p>Please check back later or contact support.</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div style="text-align: center; margin-top: 40px;">
+            <p><a href="/dashboard">← Back to Dashboard</a></p>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p><strong>My Eazy Day</strong></p>
+        <p>📍 Near Canara Bank, New Bus Stand, Kasaragod, 671124</p>
+        <p>📞 +91 9999999999 | ✉️ <a href="mailto:myeazyday@gmail.com">myeazyday@gmail.com</a></p>
+        <p>&copy; 2024 My Eazy Day. All rights reserved.</p>
+    </footer>
+</body>
+</html>

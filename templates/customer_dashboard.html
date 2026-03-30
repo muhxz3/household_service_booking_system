@@ -12,6 +12,7 @@
         <div class="logo">My Eazy Day</div>
         <div class="nav-links">
             <a href="/dashboard">Home</a>
+            <a href="{{ url_for('subscription_plans') }}">Subscribe</a>
             <a href="/my_bookings">My Bookings</a>
             <a href="{{ url_for('customer_profile') }}">Profile</a>
             <a href="/logout">Logout</a>
@@ -25,21 +26,74 @@
             <p>Select a service to book.</p>
         </div>
 
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert-{{ 'error' if category == 'error' else 'info' }}" style="padding: 15px; margin-bottom: 20px; border-radius: 8px; text-align: center; font-weight: bold;">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Active Subscription View -->
+        {% if subscription %}
+        <div class="subscription-section">
+            <div class="subscription-header">
+                <h2>Active Membership: {{ subscription.plan_name }}</h2>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span class="status-badge status-completed">Valid until: {{ subscription.end_date }}</span>
+                    <a href="{{ url_for('customer_cancel_subscription', subscription_id=subscription['subscription_id']) }}" 
+                       style="color: #dc3545; font-size: 0.9em; font-weight: bold; text-decoration: underline;"
+                       onclick="return confirm('Are you sure you want to cancel your membership? You will lose access to your remaining credits.')">
+                        Cancel Membership
+                    </a>
+                </div>
+            </div>
+            <p style="margin-bottom: 10px; font-weight: bold; color: var(--text-light);">Your Available Credits:</p>
+            <div class="credits-list">
+                {% for credit in credits %}
+                <span class="credit-badge">
+                    {{ credit.service_name }}: 
+                    {% if credit.is_unlimited %}Unlimited{% else %}{{ credit.remaining_quantity }}{% endif %}
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Services Grid -->
         <div class="services-grid">
             {% for service in services %}
-            <div class="service-card">
+            <div class="service-card {% if service.service_type == 'premium' %}premium-card{% endif %}">
                 <div class="service-icon">
-                    {# A simple logic to assign icons based on service category or name #}
+                    {% if service.service_type == 'emergency' %}🚨{% endif %}
                     {% if service.category == 'pickup' %}👕
                     {% elif 'Cleaning' in service.service_name %}🧹
                     {% elif 'Gardening' in service.service_name %}🌱
                     {% else %}🔧
                     {% endif %}
                 </div>
-               <h3>{{ service.service_name }}</h3>
-                <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
-                <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+                <h3>{{ service.service_name|replace('Emergency', '<span style="color: #cc0000;">Emergency</span>')|safe }}</h3>
+                <p>
+                    Starts at <span style="font-weight: bold;">₹{{ "%.2f"|format(service.price) }}</span>
+                    {% if 'Laundry' in service.service_name %} per kg {% elif 'Cleaning' in service.service_name or 'Plumbing' in service.service_name or 'Electric' in service.service_name or 'Gardening' in service.service_name %} per hour
+                    {% endif %}
+                </p>
+
+                {% if credit_lookup and service.service_id in credit_lookup %}
+                    {% set credit = credit_lookup[service.service_id] %}
+                    <div style="background: #e8f5e9; color: #2e7d32; padding: 8px; border-radius: 8px; font-size: 0.85em; margin-bottom: 12px; border: 1px solid #c8e6c9; font-weight: bold;">
+                        Available Credit: 
+                        {% if credit.is_unlimited %}Unlimited{% else %}{{ credit.remaining_quantity }} sessions{% endif %}
+                    </div>
+                {% endif %}
+
+                {% if service.service_type == 'emergency' %}
+                    <a href="/book/{{ service.service_id }}" class="btn">Book <span style="color: #cc0000;">NOW</span></a>
+                {% else %}
+                    <a href="/book/{{ service.service_id }}" class="btn">Book Now</a>
+                {% endif %}
             </div>
             {% else %}
             <p>No services are available at the moment. Please check back later.</p>

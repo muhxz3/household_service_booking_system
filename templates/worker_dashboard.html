@@ -10,7 +10,6 @@
     <nav class="navbar">
         <div class="logo">Worker Portal</div>
         <div class="nav-links">
-            <a href="{{ url_for('worker_dashboard') }}">Home</a>
             <a href="{{ url_for('worker_dashboard') }}">Assigned Jobs</a>
             <a href="{{ url_for('logout') }}">Logout</a>
         </div>
@@ -40,54 +39,6 @@
             {% endif %}
         {% endwith %}
 
-        <h2 style="color: #d35400;">Assigned Jobs (Premium)</h2>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Booking ID</th>
-                    <th>Customer Name</th>
-                    <th>Service</th>
-                    <th>Date & Time</th>
-                    <th>Status</th>
-                    <th>Payment</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for job in jobs %}
-                {% if job.service_type == 'premium' %}
-                <tr style="background-color: #fff8e1;">
-                    <td>{{ job.booking_id }}</td>
-                    <td>{{ job.cust_name }}</td>
-                    <td><strong>{{ job.service_name }}</strong></td>
-                    <td>{{ job.booking_date }} at {{ job.booking_time }}</td>
-                    <td>
-                        <span class="status-badge status-{{ job.booking_status.lower() }}">
-                            {{ job.booking_status }}
-                        </span>
-                    </td>
-                    <td>
-                        {% if job.payment_status == 'completed' %}
-                            <span class="payment-badge payment-completed">Paid</span>
-                        {% else %}
-                            <span class="payment-badge payment-pending">Unpaid</span>
-                        {% endif %}
-                        {% if job.amount %}
-                            <div style="font-size: 0.9em; margin-top: 5px;">₹{{ "%.2f"|format(job.amount) }}</div>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <a href="{{ url_for('booking_details', booking_id=job.booking_id) }}">View Details</a>
-                        {% if job.booking_status not in ['completed', 'cancelled'] %}
-                            <a href="{{ url_for('worker_edit_booking', booking_id=job.booking_id) }}" style="margin-left: 10px; color: blue; font-weight: bold;">Edit</a>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endif %}
-                {% endfor %}
-            </tbody>
-        </table>
-
         <h2 style="margin-top: 40px;">Assigned Jobs</h2>
         <table class="data-table">
             <thead>
@@ -116,9 +67,15 @@
                     </td>
                     <td>
                         {% if job.payment_status == 'completed' %}
-                            <span class="payment-badge payment-completed">Paid</span>
+                            <span class="payment-badge payment-completed">
+                                {% if job.is_subscription %}
+                                    Paid (Membership Credit)
+                                {% else %}
+                                    Paid ({{ job.payment_method|title if job.payment_method else 'N/A' }})
+                                {% endif %}
+                            </span>
                         {% else %}
-                            <span class="payment-badge payment-pending">Unpaid</span>
+                            <span class="payment-badge payment-pending">Unpaid ({{ job.payment_method|title if job.payment_method else 'N/A' }})</span>
                         {% endif %}
                         {% if job.amount %}
                             <div style="font-size: 0.9em; margin-top: 5px;">₹{{ "%.2f"|format(job.amount) }}</div>
@@ -149,7 +106,10 @@
                         {% endif %}
                     </div>
                     <h3>{{ service.service_name }}</h3>
-                    <p>Starts at ₹{{ "%.2f"|format(service.price) }}</p>
+                    <p>Starts at <span style="font-weight: bold;">₹{{ "%.2f"|format(service.price) }}</span>
+                    {% if 'Laundry' in service.service_name %} per kg {% elif 'Cleaning' in service.service_name or 'Plumbing' in service.service_name or 'Electric' in service.service_name or 'Gardening' in service.service_name %} per hour
+                    {% endif %}
+                    </p>
                     <a href="{{ url_for('service_details', service_id=service.service_id) }}" class="btn btn-outline">View Details</a>
                 </div>
                 {% endfor %}

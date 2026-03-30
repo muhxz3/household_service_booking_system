@@ -15,6 +15,11 @@
                 <p><strong>Customer:</strong> {{ booking.cust_name }}</p>
                 <p><strong>Service:</strong> {{ booking.service_name }}</p>
                 <p><strong>Date:</strong> {{ booking.booking_date }}</p>
+                {% if booking.subscription_id %}
+                    <p style="color: #2E8B57; font-weight: bold; margin-top: 10px;">💳 Status: Paid via Membership Credit</p>
+                {% elif booking.amount %}
+                    <p><strong>Final Amount:</strong> ₹{{ "%.2f"|format(booking.amount) }} ({{ booking.payment_status|title }})</p>
+                {% endif %}
             </div>
 
             <form action="{{ url_for('edit_booking', booking_id=booking.booking_id) }}" method="POST">
@@ -35,7 +40,9 @@
                 <div class="input-group">
                     <label for="status">Booking Status</label>
                     <select id="status" name="status">
+                        {% if not booking.subscription_id %}
                         <option value="pending" {% if booking.booking_status == 'pending' %}selected{% endif %}>Pending</option>
+                        {% endif %}
                         <option value="completed" {% if booking.booking_status == 'completed' %}selected{% endif %}>Completed</option>
                         <option value="cancelled" {% if booking.booking_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
                     </select>

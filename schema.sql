@@ -12,7 +12,7 @@ create table service
 service_name varchar(50) not null,
 category enum('pickup', 'onsite') not null,
 price decimal(10, 2) not null,
-service_type enum('regular','premium'))auto_increment=1000;
+service_type enum('regular','emergency','premium'))auto_increment=1000;
 
 create table worker
 (worker_id int primary key auto_increment,
@@ -90,11 +90,56 @@ create table pending_registrations
  expires_at timestamp not null
 );
 
+create table subscription_plan
+(plan_id int primary key auto_increment,
+ plan_name varchar(50) not null,
+ price decimal(10, 2) not null,
+ duration_months int not null default 3,
+ description text
+)auto_increment=500;
+
+create table subscription_benefit
+(benefit_id int primary key auto_increment,
+ plan_id int not null,
+ service_id int not null,
+ quantity int not null,
+ is_unlimited boolean default false,
+ foreign key (plan_id) references subscription_plan(plan_id),
+ foreign key (service_id) references service(service_id)
+)auto_increment=550;
+
+create table customer_subscription
+(subscription_id int primary key auto_increment,
+ customer_id int not null,
+ plan_id int not null,
+ start_date date not null,
+ end_date date not null,
+ status enum('active', 'expired', 'cancelled', 'pending') default 'pending',
+ foreign key (customer_id) references customer(customer_id),
+ foreign key (plan_id) references subscription_plan(plan_id) 
+)auto_increment=600;
+
+create table service_credits
+(credit_id int primary key auto_increment,
+ subscription_id int not null,
+ service_id int not null,
+ remaining_quantity int not null,
+ is_unlimited boolean default false,
+ foreign key (subscription_id) references customer_subscription(subscription_id) on delete cascade,
+ foreign key (service_id) references service(service_id)
+)auto_increment=700;
+
+alter table booking add column subscription_id int;
+alter table booking add foreign key (subscription_id) references customer_subscription(subscription_id) on delete cascade;
+
+alter table payment add column subscription_id int;
+alter table payment add foreign key (subscription_id) references customer_subscription(subscription_id) on delete cascade;
+
 create table otp_store
 (otp_id int primary key auto_increment,
  email varchar(50) not null,
  otp varchar(10) not null,
- purpose enum('login', 'password_reset') not null,
+ purpose enum('login', 'password_reset', 'email_change') not null,
  expires_at timestamp not null,
  unique key (email, purpose)
 );

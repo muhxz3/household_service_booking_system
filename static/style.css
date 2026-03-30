@@ -11,6 +11,7 @@
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: var(--background-color);
+    scroll-behavior: smooth;
     /* Removed flex centering so dashboard can scroll normally */
     margin: 0;
 }
@@ -38,6 +39,11 @@ body {
 .input-group {
     margin-bottom: 15px;
     text-align: left;
+}
+
+.input-group input:focus, .input-group select:focus {
+    outline: 2px solid var(--primary-color);
+    border-color: transparent;
 }
 
 .input-group label {
@@ -72,6 +78,8 @@ body {
 
 .btn:hover {
     background-color: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(46, 139, 87, 0.3);
 }
 
 .btn-outline {
@@ -131,11 +139,17 @@ a {
     border-radius: 10px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .service-icon {
     font-size: 3rem;
     margin-bottom: 15px;
+}
+
+.service-card:hover {
+    transform: translateY(-12px) scale(1.02);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.1);
 }
 
 .welcome-section {
@@ -150,10 +164,12 @@ a {
 
 /* --- Hero Section --- */
 .hero {
-    background-color: var(--primary-color);
+    background: linear-gradient(135deg, var(--primary-color) 0%, #1e5e3a 100%);
     color: white;
     padding: 80px 20px;
     text-align: center;
+    clip-path: ellipse(150% 100% at 50% 0%);
+    margin-bottom: 40px;
 }
 
 .hero h1 {
@@ -242,6 +258,142 @@ a {
 .form-group {
     text-align: left; 
     margin-bottom: 20px;
+}
+
+/* --- Interactive Input Styles --- */
+.stepper-input {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+/* --- Interactive Date & Time Pickers --- */
+.date-selector {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 10px 2px;
+    scrollbar-width: none;
+}
+.date-selector::-webkit-scrollbar { display: none; }
+
+.date-chip {
+    flex: 0 0 75px;
+    padding: 12px 8px;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.date-chip .day { font-size: 0.75rem; color: var(--text-light); display: block; text-transform: uppercase; }
+.date-chip .date { font-size: 1.2rem; font-weight: bold; color: var(--text-dark); }
+.date-chip:hover { border-color: var(--primary-color); transform: translateY(-2px); }
+.date-chip.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(46, 139, 87, 0.3);
+}
+.date-chip.active .day, .date-chip.active .date { color: white; }
+
+.time-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+.time-slot {
+    padding: 10px;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+.time-slot:hover { border-color: var(--primary-color); background: #f0fdf4; }
+.time-slot.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.stepper-input:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(46, 139, 87, 0.1);
+}
+
+.stepper-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: none;
+    background: var(--primary-color);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.1s, background 0.2s;
+}
+
+.stepper-btn:hover { background: var(--primary-hover); }
+.stepper-btn:active { transform: scale(0.9); }
+
+.stepper-input input {
+    border: none !important;
+    background: transparent;
+    text-align: center;
+    font-weight: bold;
+    font-size: 1.2rem;
+    padding: 0;
+    margin: 0;
+    width: 60px !important;
+}
+
+.range-container {
+    margin-top: 15px;
+    text-align: center;
+}
+
+.range-value-display {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin-bottom: 10px;
+}
+
+/* --- Interactive Star Rating --- */
+.star-rating {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    gap: 10px;
+    font-size: 2.5rem;
+    margin: 20px 0;
+}
+
+.star-rating span {
+    cursor: pointer;
+    color: #ddd;
+    padding: 5px;
+    display: inline-block;
+    transition: color 0.2s, transform 0.1s;
+}
+
+.star-rating span.hovered,
+.star-rating span.active {
+    color: #ffcc00;
+    transform: scale(1.1);
 }
 
 .form-label {
@@ -408,7 +560,7 @@ a {
     display: inline-block;
 }
 
-.status-completed, .payment-completed {
+.status-completed, .payment-completed, .status-active {
     background-color: #28a745; /* green */
 }
 
@@ -427,13 +579,14 @@ a {
 
 /* --- Premium Services --- */
 .premium-card {
-    border: 2px solid #f39c12;
-    background: #fffaf0;
+    /* Standardize theme to match regular cards */
+    border: none;
+    background: var(--card-bg);
     position: relative;
 }
 
 .premium-badge {
-    background-color: #f39c12;
+    background-color: var(--primary-color);
     color: white;
     padding: 3px 8px;
     border-radius: 4px;
@@ -443,10 +596,10 @@ a {
 }
 
 .btn-premium {
-    background-color: #d35400;
+    background-color: var(--primary-color);
 }
 .btn-premium:hover {
-    background-color: #a04000;
+    background-color: var(--primary-hover);
 }
 
 .profile-text {
@@ -515,3 +668,49 @@ a {
 input:checked + .slider { background-color: #dc3545; }
 input:focus + .slider { box-shadow: 0 0 1px #dc3545; }
 input:checked + .slider:before { transform: translateX(22px); }
+
+/* --- Subscription & Dashboard UI Enhancement --- */
+.subscription-section {
+    background: #ffffff;
+    padding: 25px;
+    border-radius: 12px;
+    border-left: 5px solid var(--primary-color);
+    margin-bottom: 30px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    text-align: left;
+}
+
+.subscription-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.subscription-header h2 {
+    margin: 0;
+    color: var(--text-dark);
+}
+
+.plan-details {
+    background: #f8fdf9;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #e1efe2;
+}
+
+.credits-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.credit-badge {
+    background: var(--primary-color);
+    color: white;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
