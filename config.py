@@ -13,4 +13,4 @@ MAIL_PASSWORD = '********'
 MAIL_SENDER = 'name@gmail.com' # This is the "from" address that will appear on emails
 
 # --- Flask Secret Key ---
-SECRET_KEY = 'my_eazy_day_my_eazy_day_my_eazy_1' 
+SECRET_KEY = '' 
